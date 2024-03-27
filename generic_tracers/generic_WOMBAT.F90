@@ -264,10 +264,8 @@ module generic_WOMBAT
       id_pprod_gross_int100 = -1, &
       id_npp_int100 = -1, &
       id_radbio_int100 = -1, &
-      id_det_sediment = -1, &
       id_det_sed_remin = -1, &
       id_det_sed_depst = -1, &
-      id_caco3_sediment = -1, &
       id_caco3_sed_remin = -1, &
       id_caco3_sed_depst = -1
 
@@ -492,12 +490,6 @@ module generic_WOMBAT
       init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-      'det_sediment', 'Accumulated detritus in sediment at base of water column', &
-      'h', '1', 's', 'mmolN/m^2', 'f')
-    wombat%id_det_sediment = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
-      init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
-
-    vardesc_temp = vardesc( &
       'det_sed_remin', 'Rate of remineralisation of detritus in accumulated sediment', &
       'h', '1', 's', 'mmolN/m^2', 'f')
     wombat%id_det_sed_remin = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
@@ -507,12 +499,6 @@ module generic_WOMBAT
       'det_sed_depst', 'Rate of deposition of detritus to sediment at base of water column', &
       'h', '1', 's', 'mmolN/m^2', 'f')
     wombat%id_det_sed_depst = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
-      init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
-    
-    vardesc_temp = vardesc( &
-      'caco3_sediment', 'Accumulated CaCO3 in sediment at base of water column', &
-      'h', '1', 's', 'mmolN/m^2', 'f')
-    wombat%id_caco3_sediment = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
       init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
@@ -956,7 +942,7 @@ module generic_WOMBAT
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMO2, &
       flux_gas_param = (/ as_coeff_wombat, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_bling_airsea_flux.res.nc')
+      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc')
     
     ! Zooplankton
     !-----------------------------------------------------------------------
@@ -995,7 +981,7 @@ module generic_WOMBAT
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMCO2, &
       flux_gas_param = (/ as_coeff_wombat, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_bling_airsea_flux.res.nc', &
+      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc', &
       init_value = 0.001)
       
     ! DIC (Natural dissolved inorganic carbon)
@@ -1011,7 +997,7 @@ module generic_WOMBAT
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMCO2, &
       flux_gas_param = (/ as_coeff_wombat, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_bling_airsea_flux.res.nc', &
+      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc', &
       init_value = 0.001)
 
     ! Alk (Total carbonate alkalinity)
@@ -1031,7 +1017,7 @@ module generic_WOMBAT
       units = 'mol/kg', &
       prog = .true., &
       flux_drydep = .true., &
-      flux_param  = (/ wombat%Rho_0 /), & ! dts attn: need to check params
+      flux_param  = (/ 1.0 /), & ! dts attn: need to check params
       flux_bottom = .true.)
 
     !=======================================================================
@@ -1691,7 +1677,7 @@ module generic_WOMBAT
         rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_radbio1 .gt. 0) &
-      used = g_send_data(wombat%id_radbio1, wombat%radbio3d(isc:iec,jsc:jec,1), model_time, &
+      used = g_send_data(wombat%id_radbio1, wombat%radbio3d(:,:,1), model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
     if (wombat%id_pprod_gross .gt. 0) &
@@ -1726,12 +1712,12 @@ module generic_WOMBAT
         wombat%npp2d(isc:iec,jsc:jec) = wombat%npp2d(isc:iec,jsc:jec) + &
           wombat%npp3d(isc:iec,jsc:jec,k) * dzt(isc:iec,jsc:jec,k)
       enddo
-      used = g_send_data(wombat%id_npp2d, wombat%npp2d(isc:iec,jsc:jec), model_time, &
+      used = g_send_data(wombat%id_npp2d, wombat%npp2d, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
     endif
 
     if (wombat%id_npp1 .gt. 0) &
-      used = g_send_data(wombat%id_npp1, wombat%npp3d(isc:iec,jsc:jec,1), model_time, &
+      used = g_send_data(wombat%id_npp1, wombat%npp3d(:,:,1), model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
     if (wombat%id_zprod_gross .gt. 0) &
@@ -1818,20 +1804,12 @@ module generic_WOMBAT
       used = g_send_data(wombat%id_radbio_int100, wombat%radbio_int100, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
-    if (wombat%id_det_sediment .gt. 0) &
-      used = g_send_data(wombat%id_det_sediment, wombat%det_sediment(:,:,1), model_time, &
-        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
-
     if (wombat%id_det_sed_remin .gt. 0) &
       used = g_send_data(wombat%id_det_sed_remin, wombat%det_sed_remin, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
     if (wombat%id_det_sed_depst .gt. 0) &
       used = g_send_data(wombat%id_det_sed_depst, wombat%det_sed_depst, model_time, &
-        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
-
-    if (wombat%id_caco3_sediment .gt. 0) &
-      used = g_send_data(wombat%id_caco3_sediment, wombat%caco3_sediment(:,:,1), model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
     if (wombat%id_caco3_sed_remin .gt. 0) &
@@ -2140,6 +2118,13 @@ module generic_WOMBAT
     allocate(wombat%f_caco3(isd:ied, jsd:jed, 1:nk)); wombat%f_caco3=0.0
     allocate(wombat%f_fe(isd:ied, jsd:jed, 1:nk)); wombat%f_fe=0.0
 
+    allocate(wombat%b_no3(isd:ied, jsd:jed)); wombat%b_no3=0.0
+    allocate(wombat%b_o2(isd:ied, jsd:jed)); wombat%b_o2=0.0
+    allocate(wombat%b_dic(isd:ied, jsd:jed)); wombat%b_dic=0.0
+    allocate(wombat%b_adic(isd:ied, jsd:jed)); wombat%b_adic=0.0
+    allocate(wombat%b_fe(isd:ied, jsd:jed)); wombat%b_fe=0.0
+    allocate(wombat%b_alk(isd:ied, jsd:jed)); wombat%b_alk=0.0
+
     allocate(wombat%light_limit(isd:ied, jsd:jed)); wombat%light_limit=0.0
     allocate(wombat%radbio3d(isd:ied, jsd:jed, 1:nk)); wombat%radbio3d=0.0
     allocate(wombat%pprod_gross(isd:ied, jsd:jed, 1:nk)); wombat%pprod_gross=0.0
@@ -2212,6 +2197,14 @@ module generic_WOMBAT
       wombat%f_o2, &
       wombat%f_caco3, &
       wombat%f_fe)
+
+    deallocate( &
+      wombat%b_no3, &
+      wombat%b_o2, &
+      wombat%b_dic, &
+      wombat%b_adic, &
+      wombat%b_fe, &
+      wombat%b_alk)
 
     deallocate( &
       wombat%light_limit, &
