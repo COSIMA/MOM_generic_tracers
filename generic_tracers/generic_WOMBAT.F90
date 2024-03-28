@@ -1030,7 +1030,7 @@ module generic_WOMBAT
     call g_tracer_add(tracer_list, package_name, &
       name = 'det_sediment', &
       longname = 'Detritus at base of column as sediment', &
-      units = 'mmol m-2', &
+      units = 'mol m-2', &
       prog = .false.)
 
     ! CaCO3 sitting at base of column as sediment
@@ -1039,7 +1039,7 @@ module generic_WOMBAT
     call g_tracer_add(tracer_list, package_name, &
       name  = 'caco3_sediment', &
       longname = 'CaCO3 at base of column as sediment', &
-      units = 'mmol m-2', &
+      units = 'mol m-2', &
       prog = .false.)
 
   end subroutine user_add_tracers
