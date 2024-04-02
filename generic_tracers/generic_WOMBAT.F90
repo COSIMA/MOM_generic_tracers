@@ -981,8 +981,7 @@ module generic_WOMBAT
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMCO2, &
       flux_gas_param = (/ as_coeff_wombat, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc', &
-      init_value = 0.001)
+      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc')
       
     ! DIC (Natural dissolved inorganic carbon)
     !-----------------------------------------------------------------------
@@ -997,8 +996,7 @@ module generic_WOMBAT
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMCO2, &
       flux_gas_param = (/ as_coeff_wombat, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc', &
-      init_value = 0.001)
+      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc')
 
     ! Alk (Total carbonate alkalinity)
     !-----------------------------------------------------------------------
