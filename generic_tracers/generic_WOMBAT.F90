@@ -1201,7 +1201,7 @@ module generic_WOMBAT
     integer                                 :: i, j, k
     real, dimension(:,:,:), pointer         :: grid_tmask
     integer, dimension(:,:), pointer        :: grid_kmt
-    integer                                 :: kmeuph = 1 ! deepest level of  euphotic zone
+    integer, dimension(:,:), allocatable    :: kmeuph ! deepest level of  euphotic zone
     integer                                 :: ts_npzd ! number of time steps within NPZD model
     real                                    :: dtsb ! number of seconds per NPZD timestep
     real                                    :: rdtts ! 1 / dt
@@ -1211,7 +1211,7 @@ module generic_WOMBAT
     real                                    :: fbc
     real                                    :: f11, f21, f22, f23, f31, f32, f41, f51
     real                                    :: no3_bgc_change, caco3_bgc_change
-    real                                    :: epsi = 1e-15
+    real                                    :: epsi = 1.0e-30
     logical                                 :: used
 
     call g_tracer_get_common(isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, &
@@ -1288,16 +1288,6 @@ module generic_WOMBAT
     ! Calculate the source terms
     !=======================================================================
 
-    ! Set the maximum index for euphotic depth
-    do k=1,nk; do j = jsc,jec; do i = isc,iec;
-      if (wombat%zw(i,j,k) .le. 400) kmeuph=max(k, kmeuph)
-    enddo; enddo; enddo
-
-    ! Get the timestep for the ecosystem model
-    ts_npzd = max(1, nint(dt / wombat%dt_npzd)) ! number of ecosystem timesteps per model timestep
-    rdtts = 1 / dt
-    dtsb = dt / float(ts_npzd) ! number of seconds per nested ecosystem timestep
-
     wombat%pprod_gross = 0.0
     wombat%zprod_gross = 0.0
     wombat%light_limit = 0.0
@@ -1330,12 +1320,23 @@ module generic_WOMBAT
     allocate(caco3_orig(isc:iec,jsc:jec, 1:nk)); caco3_orig=0.0
     allocate(adv_fb(isc:iec,jsc:jec, 1:nk+1)); adv_fb=0.0
     
+    ! Set the maximum index for euphotic depth
+    ! dts: in WOMBAT v3, kmeuph is an integer but here it is an array since zw
+    ! may vary spatially
+    allocate(kmeuph(isc:iec, jsc:jec)); kmeuph=1
+    do k=1,nk; do j = jsc,jec; do i = isc,iec;
+      if (wombat%zw(i,j,k) .le. 400) kmeuph(i,j)=k
+    enddo; enddo; enddo
+
+    ! Get the timestep for the ecosystem model
+    ts_npzd = max(1, nint(dt / wombat%dt_npzd)) ! number of ecosystem timesteps per model timestep
+    rdtts = 1 / dt
+    dtsb = dt / float(ts_npzd) ! number of seconds per nested ecosystem timestep
+
     !-----------------------------------------------------------------------
     ! Available light
     !-----------------------------------------------------------------------
-    do k = 1,kmeuph; do j = jsc,jec; do i = isc,iec;
-      ! Shortwave intensity averaged over layer
-      ! dts attn: still need to account for sw decay through column using opacity
+    do j = jsc,jec; do i = isc,iec; do k = 1,kmeuph(i,j);
       wombat%radbio3d(i,j,k) = sw_pen_band(1,i,j)
 
       wombat%vpbio(i,j,k) = wombat%abio * wombat%bbio ** (wombat%cbio * Temp(i,j,k))
@@ -1370,6 +1371,9 @@ module generic_WOMBAT
     call g_tracer_get_values(tracer_list, 'o2', 'field', wombat%f_o2, isd, jsd, ntau=tau, positive=.true.)
     call g_tracer_get_values(tracer_list, 'caco3', 'field', wombat%f_caco3, isd, jsd, ntau=tau, positive=.true.)
     call g_tracer_get_values(tracer_list, 'fe', 'field', wombat%f_fe, isd, jsd, ntau=tau, positive=.true.)
+
+    no3_orig = wombat%f_no3
+    caco3_orig = wombat%f_caco3
 
     do tn = 1,ts_npzd
       do k = 1,nk; do j = jsc,jec; do i = isc,iec;
@@ -1421,7 +1425,7 @@ module generic_WOMBAT
         if (wombat%f_det(i,j,k) .gt. epsi) then
           f41 = wombat%muedbio * fbc * wombat%f_det(i,j,k)
 
-          if (wombat%zw(i,j,k) .ge. 180) f41 = f41*.5 ! reduce decay below 300m
+          if (wombat%zw(i,j,k) .ge. 180) f41 = 0.5 * f41 ! reduce decay below 180m
         else
           f41 = 0.0
         endif
@@ -1483,9 +1487,6 @@ module generic_WOMBAT
     !-----------------------------------------------------------------------
     ! Add biotically induced tendency to biotracers
     !-----------------------------------------------------------------------
-    call g_tracer_get_values(tracer_list, 'no3', 'field', no3_orig, isd, jsd, ntau=tau, positive=.true.)
-    call g_tracer_get_values(tracer_list, 'caco3', 'field', caco3_orig, isd, jsd, ntau=tau, positive=.true.)
-
     ! dts: update prognostic tracers via pointers
     call g_tracer_get_pointer(tracer_list, 'dic', 'field', wombat%p_dic)
     call g_tracer_get_pointer(tracer_list, 'adic', 'field', wombat%p_adic)
