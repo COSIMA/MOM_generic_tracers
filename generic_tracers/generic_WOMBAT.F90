@@ -1198,7 +1198,7 @@ module generic_WOMBAT
 
     character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBAT_update_from_source'
     integer                                 :: isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, tn
-    integer                                 :: i, j, k
+    integer                                 :: i, j, k, n
     real, dimension(:,:,:), pointer         :: grid_tmask
     integer, dimension(:,:), pointer        :: grid_kmt
     integer, dimension(:,:), allocatable    :: kmeuph ! deepest level of  euphotic zone
@@ -1207,6 +1207,8 @@ module generic_WOMBAT
     real                                    :: rdtts ! 1 / dt
     real, dimension(:,:,:), allocatable     :: no3_orig, caco3_orig
     real, dimension(:,:,:), allocatable     :: adv_fb
+    real, dimension(nbands)                 :: sw_pen
+    real                                    :: sw_pen_top, sw_pen_bottom
     real                                    :: u_npz, g_npz
     real                                    :: fbc
     real                                    :: f11, f21, f22, f23, f31, f32, f41, f51
@@ -1336,20 +1338,31 @@ module generic_WOMBAT
     !-----------------------------------------------------------------------
     ! Available light
     !-----------------------------------------------------------------------
-    do j = jsc,jec; do i = isc,iec; do k = 1,kmeuph(i,j);
-      wombat%radbio3d(i,j,k) = sw_pen_band(1,i,j)
+    do j = jsc,jec; do i = isc,iec
+      sw_pen = sw_pen_band(:,i,j)
+      do k = 1,kmeuph(i,j)
+        ! Shortwave intensity summed over bands and averaged over layer
+        sw_pen_top = 0.0
+        sw_pen_bottom = 0.0
+        do n = 1,nbands;
+            sw_pen_top = sw_pen_top + sw_pen(n) ! sw at top interface
+            sw_pen(n) = sw_pen(n) * exp(-1.0 * opacity_band(n,i,j,k) * dzt(i,j,k))
+            sw_pen_bottom = sw_pen_bottom + sw_pen(n) ! sw at bottom interface
+        enddo
+        wombat%radbio3d(i,j,k) = 0.5 * (sw_pen_top + sw_pen_bottom)
 
-      wombat%vpbio(i,j,k) = wombat%abio * wombat%bbio ** (wombat%cbio * Temp(i,j,k))
+        wombat%vpbio(i,j,k) = wombat%abio * wombat%bbio ** (wombat%cbio * Temp(i,j,k))
 
-      ! Growth term from Brian Griffiths
-      wombat%avej(i,j,k) = wombat%vpbio(i,j,k) * &
-        (1.0 - exp(-1.0 * (wombat%alphabio * wombat%radbio3d(i,j,k)) / wombat%vpbio(i,j,k)))
-
-      ! Calculate the average light limitation over the mixed layer
-      if (wombat%zw(i,j,k) .le. hblt_depth(i,j)) &
-        wombat%light_limit(i,j) = wombat%light_limit(i,j) + dzt(i,j,k) * &
+        ! Growth term from Brian Griffiths
+        wombat%avej(i,j,k) = wombat%vpbio(i,j,k) * &
           (1.0 - exp(-1.0 * (wombat%alphabio * wombat%radbio3d(i,j,k)) / wombat%vpbio(i,j,k)))
-    enddo; enddo; enddo
+
+        ! Calculate the average light limitation over the mixed layer
+        if (wombat%zw(i,j,k) .le. hblt_depth(i,j)) &
+          wombat%light_limit(i,j) = wombat%light_limit(i,j) + dzt(i,j,k) * &
+            (1.0 - exp(-1.0 * (wombat%alphabio * wombat%radbio3d(i,j,k)) / wombat%vpbio(i,j,k)))
+      enddo
+    enddo; enddo
 
     !-----------------------------------------------------------------------
     ! Calculate source terms using Euler forward timestepping
