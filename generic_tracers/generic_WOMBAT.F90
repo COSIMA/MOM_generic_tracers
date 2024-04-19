@@ -1461,7 +1461,7 @@ module generic_WOMBAT
         ! Iron limitation
         ! dts: convert 0.1 from mmol/m3 to mol/kg
         u_npz = min(u_npz, wombat%vpbio(i,j,k) * wombat%f_fe(i,j,k) / &
-          (mmol_m3_to_mol_kg * 0.1 + wombat%f_fe(i,j,k))) ! [1/s]
+          (umol_m3_to_mol_kg * 0.1 + wombat%f_fe(i,j,k))) ! [1/s]
 
         ! Grazing function
         ! dts: convert epsbio from m6/mmol2/s to kg2/mol2/s
