@@ -175,8 +175,8 @@ module generic_WOMBAT
       pprod_gross_2d, &
       wdet100, &
       npp2d, &
-      det_sed_depst, &
-      caco3_sed_depst, &
+      det_btm, &
+      caco3_btm, &
       det_sed_remin, &
       caco3_sed_remin, &
       dic_intmld, &
@@ -681,6 +681,9 @@ module generic_WOMBAT
     ! module. All the g_tracer_add_param calls must happen between
     ! g_tracer_start_param_list and g_tracer_end_param_list calls. This
     ! implementation enables runtime overwrite via field_table.
+    ! dts: Note, some parameters are required by the user_add_tracers routine
+    ! which is run _before_ this one. Those parameters are added in
+    ! user_add_tracers.
 
     ! User adds one call for each parameter below with the template
     ! g_tracer_add_param(name, variable,  default_value)
@@ -822,12 +825,6 @@ module generic_WOMBAT
     ! 2020)
     call g_tracer_add_param('muedbio_sed', wombat%muedbio_sed, 2.31481e-7)
 
-    ! Detritus sinking velocity [m/s]
-    !-----------------------------------------------------------------------
-    ! Default value matches Ziehn et al 2020 but differs from Hayashida et
-    ! al 2020
-    call g_tracer_add_param('wdetbio', wombat%wdetbio, 2.77778e-4)
-
     ! CaCO3 remineralisation rate constant [1/s]
     !-----------------------------------------------------------------------
     ! Default value matches 0.001714 day-1 in Ziehn et al 2020; differs from
@@ -837,12 +834,6 @@ module generic_WOMBAT
     ! CaCO3 remineralization rate constant in sediments [1/s]
     !-----------------------------------------------------------------------
     call g_tracer_add_param('muecaco3_sed', wombat%muecaco3_sed, 4.05093e-8)
-
-    ! CaCO3 sinking velocity [m/s]
-    !-----------------------------------------------------------------------
-    ! Default value matches Ziehn et al 2020 but differs from Hayashida et
-    ! al 2020
-    call g_tracer_add_param('wcaco3', wombat%wcaco3, 6.94444e-5)
 
     ! CaCO3 inorganic fraction [1]
     !-----------------------------------------------------------------------
@@ -875,13 +866,30 @@ module generic_WOMBAT
     character(len=fm_string_len), parameter :: sub_name = 'user_add_tracers'
     real                                    :: as_coeff_wombat
 
+    !=======================================================================
+    ! Parameters
+    !=======================================================================
+    ! Add here only the parameters that are required at the time of registeration
+    ! (to make flux exchanging ocean tracers known for all PE's)
+
     ! Air-sea gas exchange coefficient presented in OCMIP2 protocol.
+    !-----------------------------------------------------------------------
     ! From Wanninkhof 1992 for steady wind speed (in m/s)
     as_coeff_wombat = 0.31 / 3.6e5
 
-    ! Add here only the parameters that are required at the time of registeration
-    ! (to make flux exchanging ocean tracers known for all PE's)
     call g_tracer_start_param_list(package_name)
+
+    ! CaCO3 sinking velocity [m/s]
+    !-----------------------------------------------------------------------
+    ! Default value matches Ziehn et al 2020 but differs from Hayashida et
+    ! al 2020
+    call g_tracer_add_param('wcaco3', wombat%wcaco3, 6.94444e-5)
+
+    ! Detritus sinking velocity [m/s]
+    !-----------------------------------------------------------------------
+    ! Default value matches Ziehn et al 2020 but differs from Hayashida et
+    ! al 2020
+    call g_tracer_add_param('wdetbio', wombat%wdetbio, 2.77778e-4)
 
     call g_tracer_add_param('ice_restart_file', wombat%ice_restart_file, 'ice_wombat.res.nc')
     call g_tracer_add_param('ocean_restart_file', wombat%ocean_restart_file, 'ocean_wombat.res.nc')
@@ -962,7 +970,9 @@ module generic_WOMBAT
       name = 'det', &
       longname = 'Detritus', &
       units = 'mol/kg', &
-      prog = .true.)
+      prog = .true., &
+      sink_rate = wombat%wdetbio, &
+      btm_reservoir = .true.)
 
     ! CaCO3
     !-----------------------------------------------------------------------
@@ -970,7 +980,9 @@ module generic_WOMBAT
       name = 'caco3', &
       longname = 'CaCO3', &
       units = 'mol/kg', &
-      prog = .true.)
+      prog = .true., &
+      sink_rate = wombat%wcaco3, &
+      btm_reservoir = .true.)
 
     ! ADIC (Natural + anthropogenic dissolved inorganic carbon)
     !-----------------------------------------------------------------------
@@ -1088,9 +1100,9 @@ module generic_WOMBAT
   !  <DESCRIPTION>
   !   Some tracers could have bottom fluxes and reservoirs.
   !   This subroutine is the place for specific tracer manipulations.
-  !   In WOMBAT, the bottom fluxes are handled within update_from_source
-  !   (the calculations require temperature), but the application of
-  !   deposition and remineralization into sediment tracers is done here.
+  !   In WOMBAT, remineralization from the sediment tracers (which requires
+  !   temperature) is done in update_from_source. Deposition from sinking
+  !   is handled here.
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
@@ -1110,16 +1122,40 @@ module generic_WOMBAT
   !  </IN>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBAT_update_from_bottom(tracer_list, dt, tau)
+  subroutine generic_WOMBAT_update_from_bottom(tracer_list, dt, tau, model_time)
     type(g_tracer_type), pointer :: tracer_list
     real, intent(in)             :: dt
     integer, intent(in)          :: tau
+    type(time_type), intent(in)  :: model_time
 
     integer                         :: isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau
-    real, dimension(:,:,:), pointer :: grid_tmask
+    real, dimension(:,:,:), pointer :: grid_tmask, temp_field
+    logical                         :: used
 
     call g_tracer_get_common(isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, &
       grid_tmask=grid_tmask)
+
+    ! Move bottom reservoirs to sediment tracers
+    !-----------------------------------------------------------------------
+    call g_tracer_get_values(tracer_list, 'det', 'btm_reservoir', wombat%det_btm, isd, jsd)
+    call g_tracer_get_pointer(tracer_list, 'det_sediment', 'field', temp_field)
+    temp_field(:,:,1) = temp_field(:,:,1) + wombat%det_btm(:,:) ! [mol/m2]
+    call g_tracer_set_values(tracer_list, 'det', 'btm_reservoir', 0.0)
+
+    call g_tracer_get_values(tracer_list, 'caco3', 'btm_reservoir', wombat%caco3_btm, isd, jsd)
+    call g_tracer_get_pointer(tracer_list, 'caco3_sediment', 'field', temp_field)
+    temp_field(:,:,1) = temp_field(:,:,1) + wombat%caco3_btm(:,:) ! [mol/m2]
+    call g_tracer_set_values(tracer_list, 'caco3', 'btm_reservoir', 0.0)
+
+    ! Send diagnostics
+    !-----------------------------------------------------------------------
+    if (wombat%id_det_sed_depst .gt. 0) &
+      used = g_send_data(wombat%id_det_sed_depst, wombat%det_btm / dt, model_time, &
+        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_caco3_sed_depst .gt. 0) &
+      used = g_send_data(wombat%id_caco3_sed_depst, wombat%caco3_btm / dt, model_time, &
+        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
   end subroutine generic_WOMBAT_update_from_bottom
 
@@ -1202,7 +1238,7 @@ module generic_WOMBAT
 
     character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBAT_update_from_source'
     integer                                 :: isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, tn
-    integer                                 :: i, j, k, n
+    integer                                 :: i, j, k, n, nz
     real, dimension(:,:,:), pointer         :: grid_tmask
     integer, dimension(:,:), pointer        :: grid_kmt
     integer, dimension(:,:), allocatable    :: kmeuph ! deepest level of  euphotic zone
@@ -1336,9 +1372,12 @@ module generic_WOMBAT
     ! dts: in WOMBAT v3, kmeuph is an integer but here it is an array since zw
     ! may vary spatially
     allocate(kmeuph(isc:iec, jsc:jec)); kmeuph=1
-    do k=1,nk; do j = jsc,jec; do i = isc,iec;
-      if (wombat%zw(i,j,k) .le. 400) kmeuph(i,j)=k
-    enddo; enddo; enddo
+    do j = jsc,jec; do i = isc,iec;
+      nz = grid_kmt(i,j)
+      do k = 1,nz
+        if (wombat%zw(i,j,k) .le. 400) kmeuph(i,j)=k
+      enddo
+    enddo; enddo
 
     ! Get the timestep for the ecosystem model
     ts_npzd = max(1, nint(dt / wombat%dt_npzd)) ! number of ecosystem timesteps per model timestep
@@ -1426,7 +1465,6 @@ module generic_WOMBAT
 
         ! Grazing function
         ! dts: convert epsbio from m6/mmol2/s to kg2/mol2/s
-        ! dts attn: epsbio units must be m6/mmol2/s right?
         g_npz = wombat%gbio * (wombat%epsbio / mmol2_m6_to_mol2_kg2) * wombat%f_phy(i,j,k) * wombat%f_phy(i,j,k) / &
           (wombat%gbio + (wombat%epsbio /mmol2_m6_to_mol2_kg2) * wombat%f_phy(i,j,k) * wombat%f_phy(i,j,k)) ! [1/s]
 
@@ -1502,7 +1540,6 @@ module generic_WOMBAT
 
         ! Oxygen equation
         !-----------------------------------------------------------------------
-        ! dts attn: what is 172 / 16? Does it need unit conversion?
         if (wombat%f_o2(i,j,k) .gt. epsi) &
           wombat%f_o2(i,j,k) = wombat%f_o2(i,j,k) - 172. / 16. * dtsb * &
             (f41 + f31 + f22 - f11) ! [mol/kg]
@@ -1510,7 +1547,6 @@ module generic_WOMBAT
         ! Extra equation for caco3 - alkalinity
         !-----------------------------------------------------------------------
         ! rjm: 8% of POC 106/16*.08
-        ! dts attn: what is 106 / 16? Does it need unit conversion?
         wombat%f_caco3(i,j,k) = wombat%f_caco3(i,j,k) + dtsb * &
           (((1 - wombat%gam1bio) * f21 + f23 + f32) * wombat%f_inorg * 106. / 16. - f51) ! [mol/kg]
 
@@ -1523,7 +1559,6 @@ module generic_WOMBAT
       enddo; enddo; enddo
     enddo
 
-    !-----------------------------------------------------------------------
     ! Add biotically induced tendency to biotracers
     !-----------------------------------------------------------------------
     ! dts: update prognostic tracers via pointers
@@ -1539,15 +1574,12 @@ module generic_WOMBAT
       wombat%f_fe(i,j,k) = wombat%f_fe(i,j,k) - dt * wombat%tscav_fe * &
         max(0.0, (wombat%f_fe(i,j,k) - (umol_m3_to_mol_kg * wombat%fe_bkgnd))) ! [mol/kg]
 
-      ! dts attn: what is 106 / 16? Does it need unit conversion?
       wombat%p_dic(i,j,k,tau) = wombat%p_dic(i,j,k,tau) + 106. / 16. * &
         no3_bgc_change - caco3_bgc_change ! [mol/kg]
 
-      ! dts attn: what is 106 / 16? Does it need unit conversion?
       wombat%p_adic(i,j,k,tau) = wombat%p_adic(i,j,k,tau) + 106. / 16. * &
         no3_bgc_change - caco3_bgc_change ! [mol/kg]
 
-      ! dts attn: what is -2.0? Does it need unit conversion?
       wombat%p_alk(i,j,k,tau) = wombat%p_alk(i,j,k,tau) + &
         (-2.0 * caco3_bgc_change - no3_bgc_change) ! [mol/kg]
 
@@ -1593,55 +1625,6 @@ module generic_WOMBAT
       endif
     enddo; enddo
 
-    !-----------------------------------------------------------------------
-    ! Upstream sinking and deposition
-    !-----------------------------------------------------------------------
-    ! dts: could we do this by setting sink_rate and btm_reservoir on these
-    ! tracers?
-
-    ! rasf: no flux boundary conditions
-    do j = jsc,jec; do i = isc,iec;
-      adv_fb(i,j,1) = 0.0 ! [mol/m2/s]
-    enddo; enddo
-
-    ! Sinking of detritus
-    !-----------------------------------------------------------------------
-    do k = 2,nk+1; do j = jsc,jec; do i = isc,iec;
-      adv_fb(i,j,k) = (wombat%Rho_0 * wombat%wdetbio) * wombat%f_det(i,j,k-1) ! [mol/m2/s]
-    enddo; enddo; enddo
-
-    ! mac: deposit tracer to sediment as tracer sinks through base of column
-    do j = jsc,jec; do i = isc,iec;
-      k = grid_kmt(i,j)
-      if (k .gt. 0) then 
-        wombat%det_sed_depst(i,j) = adv_fb(i,j,k+1) ! [mol/m2/s]
-      endif
-    enddo; enddo
-
-    do k = 1,nk; do j = jsc,jec; do i = isc,iec;
-      wombat%f_det(i,j,k) = wombat%f_det(i,j,k) + grid_tmask(i,j,k) * dt * &
-        (-adv_fb(i,j,k+1) + adv_fb(i,j,k)) / rho_dzt(i,j,k) ! [mol/kg]
-    enddo; enddo; enddo
-
-    ! Sinking of CaCO3
-    !-----------------------------------------------------------------------
-    do k = 2,nk+1; do j = jsc,jec; do i = isc,iec;
-      adv_fb(i,j,k) = (wombat%Rho_0 * wombat%wcaco3) * wombat%f_caco3(i,j,k-1) ! [mol/m2/s]
-    enddo; enddo; enddo
-
-    ! mac: deposit tracer to sediment as tracer sinks through base of column
-    do j = jsc,jec; do i = isc,iec;
-      k = grid_kmt(i,j)
-      if (k .gt. 0) then 
-        wombat%caco3_sed_depst(i,j) = adv_fb(i,j,k+1) ! [mol/m2/s]
-      endif
-    enddo; enddo
-
-    do k = 1,nk; do j = jsc,jec; do i = isc,iec;
-      wombat%f_caco3(i,j,k) = wombat%f_caco3(i,j,k) + grid_tmask(i,j,k) * dt * &
-        (-adv_fb(i,j,k+1) + adv_fb(i,j,k)) / rho_dzt(i,j,k) ! [mol/kg]
-    enddo; enddo; enddo
-
     ! Set tracers values
     call g_tracer_set_values(tracer_list, 'no3', 'field', wombat%f_no3, isd, jsd, ntau=tau)
     call g_tracer_set_values(tracer_list, 'phy', 'field', wombat%f_phy, isd, jsd, ntau=tau)
@@ -1652,10 +1635,9 @@ module generic_WOMBAT
     call g_tracer_set_values(tracer_list, 'fe', 'field', wombat%f_fe, isd, jsd, ntau=tau)
 
     !-----------------------------------------------------------------------
-    ! Bottom box
+    ! Remineralisation of sediment tracers
     !-----------------------------------------------------------------------
-    ! dts: these calculations require temperature so cannot go in
-    ! update_from_bottom
+    ! dts attn: do this with pointers?
     call g_tracer_get_values(tracer_list, 'det_sediment', 'field', wombat%det_sediment, isd, jsd, ntau=1) ! [mol/m2]
     call g_tracer_get_values(tracer_list, 'caco3_sediment', 'field', wombat%caco3_sediment, isd, jsd, ntau=1) ! [mol/m2]
 
@@ -1666,11 +1648,8 @@ module generic_WOMBAT
         wombat%det_sed_remin(i,j) = wombat%muedbio_sed * fbc * wombat%det_sediment(i,j,1) ! [mol/m2/s]
         wombat%caco3_sed_remin(i,j) = wombat%muecaco3_sed * fbc * wombat%caco3_sediment(i,j,1) ! [mol/m2/s]
         
-        ! Remineralisation of sediments to supply nutrient fields.  
-        ! mac: btf values are positive from the water column into the sediment.
-        ! dts attn: what is 172. / 16.? Does it need unit conversion?
-        ! dts attn: what is 106. / 16.? Does it need unit conversion?
-        ! dts attn: what is -2.0? Does it need unit conversion?
+        ! Remineralisation of sediments to supply nutrient fields.
+        ! btf values are positive from the water column into the sediment.
         wombat%b_no3(i,j) = -1.0 * wombat%det_sed_remin(i,j) ! [mol/m2/s]
         wombat%b_o2(i,j) = -172. / 16. * wombat%b_no3(i,j) ! [mol/m2/s]
         wombat%b_dic(i,j) = 106. / 16. * wombat%b_no3(i,j) - wombat%caco3_sed_remin(i,j) ! [mol/m2/s]
@@ -1680,14 +1659,12 @@ module generic_WOMBAT
       endif
     enddo; enddo
 
-    ! Apply deposition and remineralisation rates to sediment tracers
+    ! Apply remineralisation rates to sediment tracers
     !-----------------------------------------------------------------------
     do j = jsc,jec; do i = isc,iec;
       if (grid_kmt(i,j) .gt. 0) then
-        wombat%det_sediment(i,j,1) = wombat%det_sediment(i,j,1) + dt * &
-          (wombat%det_sed_depst(i,j) - wombat%det_sed_remin(i,j)) ! [mol/m2]
-        wombat%caco3_sediment(i,j,1) = wombat%caco3_sediment(i,j,1) + dt * &
-          (wombat%caco3_sed_depst(i,j) - wombat%caco3_sed_remin(i,j)) ! [mol/m2]
+        wombat%det_sediment(i,j,1) = wombat%det_sediment(i,j,1) - dt * wombat%det_sed_remin(i,j) ! [mol/m2]
+        wombat%caco3_sediment(i,j,1) = wombat%caco3_sediment(i,j,1) - dt * wombat%caco3_sed_remin(i,j) ! [mol/m2]
       endif
     enddo; enddo
 
@@ -1697,8 +1674,8 @@ module generic_WOMBAT
     call g_tracer_set_values(tracer_list, 'adic', 'btf', wombat%b_adic, isd, jsd)
     call g_tracer_set_values(tracer_list, 'fe', 'btf', wombat%b_fe, isd, jsd)
     call g_tracer_set_values(tracer_list, 'alk', 'btf', wombat%b_alk, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'det_sediment', 'field', wombat%det_sediment,isd, jsd, ntau=1)
-    call g_tracer_set_values(tracer_list, 'caco3_sediment', 'field', wombat%caco3_sediment,isd, jsd, ntau=1)
+    call g_tracer_set_values(tracer_list, 'det_sediment', 'field', wombat%det_sediment, isd, jsd, ntau=1)
+    call g_tracer_set_values(tracer_list, 'caco3_sediment', 'field', wombat%caco3_sediment, isd, jsd, ntau=1)
 
     !=======================================================================
     ! Send diagnostics
@@ -1852,16 +1829,8 @@ module generic_WOMBAT
       used = g_send_data(wombat%id_det_sed_remin, wombat%det_sed_remin, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
-    if (wombat%id_det_sed_depst .gt. 0) &
-      used = g_send_data(wombat%id_det_sed_depst, wombat%det_sed_depst, model_time, &
-        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
-
     if (wombat%id_caco3_sed_remin .gt. 0) &
       used = g_send_data(wombat%id_caco3_sed_remin, wombat%caco3_sed_remin, model_time, &
-        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
-
-    if (wombat%id_caco3_sed_depst .gt. 0) &
-      used = g_send_data(wombat%id_caco3_sed_depst, wombat%caco3_sed_depst, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
   end subroutine generic_WOMBAT_update_from_source
@@ -2181,10 +2150,10 @@ module generic_WOMBAT
     allocate(wombat%avej(isd:ied, jsd:jed, 1:nk)); wombat%avej=0.0
     allocate(wombat%det_sediment(isd:ied, jsd:jed, 1:nk)); wombat%det_sediment=0.0
     allocate(wombat%det_sed_remin(isd:ied, jsd:jed)); wombat%det_sed_remin=0.0
-    allocate(wombat%det_sed_depst(isd:ied, jsd:jed)); wombat%det_sed_depst=0.0
+    allocate(wombat%det_btm(isd:ied, jsd:jed)); wombat%det_btm=0.0
     allocate(wombat%caco3_sediment(isd:ied, jsd:jed, 1:nk)); wombat%caco3_sediment=0.0
     allocate(wombat%caco3_sed_remin(isd:ied, jsd:jed)); wombat%caco3_sed_remin=0.0
-    allocate(wombat%caco3_sed_depst(isd:ied, jsd:jed)); wombat%caco3_sed_depst=0.0
+    allocate(wombat%caco3_btm(isd:ied, jsd:jed)); wombat%caco3_btm=0.0
     allocate(wombat%zw(isd:ied, jsd:jed, 1:nk)); wombat%zw=0.0
     allocate(wombat%zm(isd:ied, jsd:jed, 1:nk)); wombat%zm=0.0
 
@@ -2263,10 +2232,10 @@ module generic_WOMBAT
       wombat%avej, &
       wombat%det_sediment, &
       wombat%det_sed_remin, &
-      wombat%det_sed_depst, &
+      wombat%det_btm, &
       wombat%caco3_sediment, &
       wombat%caco3_sed_remin, &
-      wombat%caco3_sed_depst, &
+      wombat%caco3_btm, &
       wombat%zw, &
       wombat%zm)
 

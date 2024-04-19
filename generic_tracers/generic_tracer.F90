@@ -629,7 +629,7 @@ contains
 
     if(do_generic_COBALT)  call generic_COBALT_update_from_bottom(tracer_list,dt, tau, model_time)
 
-    if(do_generic_WOMBAT)  call generic_WOMBAT_update_from_bottom(tracer_list,dt, tau)
+    if(do_generic_WOMBAT)  call generic_WOMBAT_update_from_bottom(tracer_list,dt, tau, model_time)
 
     return
 
