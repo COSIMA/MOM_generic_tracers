@@ -212,8 +212,6 @@ module generic_WOMBAT
       f_o2, &
       f_caco3, &
       f_fe, &
-      det_sediment, &
-      caco3_sediment, &
       pprod_gross, &
       zprod_gross, &
       radbio3d, &
@@ -228,6 +226,10 @@ module generic_WOMBAT
       p_adic, &
       p_alk, &
       p_o2
+
+    real, dimension(:,:,:), pointer :: &
+      p_det_sediment, &
+      p_caco3_sediment
 
     !-----------------------------------------------------------------------
     ! IDs for diagnostics
@@ -1131,7 +1133,7 @@ module generic_WOMBAT
     type(time_type), intent(in)  :: model_time
 
     integer                         :: isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau
-    real, dimension(:,:,:), pointer :: grid_tmask, temp_field
+    real, dimension(:,:,:), pointer :: grid_tmask
     logical                         :: used
 
     call g_tracer_get_common(isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, &
@@ -1140,13 +1142,13 @@ module generic_WOMBAT
     ! Move bottom reservoirs to sediment tracers
     !-----------------------------------------------------------------------
     call g_tracer_get_values(tracer_list, 'det', 'btm_reservoir', wombat%det_btm, isd, jsd)
-    call g_tracer_get_pointer(tracer_list, 'det_sediment', 'field', temp_field)
-    temp_field(:,:,1) = temp_field(:,:,1) + wombat%det_btm(:,:) ! [mol/m2]
+    call g_tracer_get_pointer(tracer_list, 'det_sediment', 'field', wombat%p_det_sediment)
+    wombat%p_det_sediment(:,:,1) = wombat%p_det_sediment(:,:,1) + wombat%det_btm(:,:) ! [mol/m2]
     call g_tracer_set_values(tracer_list, 'det', 'btm_reservoir', 0.0)
 
     call g_tracer_get_values(tracer_list, 'caco3', 'btm_reservoir', wombat%caco3_btm, isd, jsd)
-    call g_tracer_get_pointer(tracer_list, 'caco3_sediment', 'field', temp_field)
-    temp_field(:,:,1) = temp_field(:,:,1) + wombat%caco3_btm(:,:) ! [mol/m2]
+    call g_tracer_get_pointer(tracer_list, 'caco3_sediment', 'field', wombat%p_caco3_sediment)
+    wombat%p_caco3_sediment(:,:,1) =  wombat%p_caco3_sediment(:,:,1) + wombat%caco3_btm(:,:) ! [mol/m2]
     call g_tracer_set_values(tracer_list, 'caco3', 'btm_reservoir', 0.0)
 
     ! Send diagnostics
@@ -1639,16 +1641,15 @@ module generic_WOMBAT
     !-----------------------------------------------------------------------
     ! Remineralisation of sediment tracers
     !-----------------------------------------------------------------------
-    ! dts attn: do this with pointers?
-    call g_tracer_get_values(tracer_list, 'det_sediment', 'field', wombat%det_sediment, isd, jsd, ntau=1) ! [mol/m2]
-    call g_tracer_get_values(tracer_list, 'caco3_sediment', 'field', wombat%caco3_sediment, isd, jsd, ntau=1) ! [mol/m2]
+    call g_tracer_get_pointer(tracer_list, 'det_sediment', 'field', wombat%p_det_sediment) ! [mol/m2]
+    call g_tracer_get_pointer(tracer_list, 'caco3_sediment', 'field', wombat%p_caco3_sediment) ! [mol/m2]
 
     do j = jsc,jec; do i = isc,iec;
       k = grid_kmt(i,j)
       if (k .gt. 0) then
         fbc = wombat%bbio ** (wombat%cbio * Temp(i,j,k)) ! [1]
-        wombat%det_sed_remin(i,j) = wombat%muedbio_sed * fbc * wombat%det_sediment(i,j,1) ! [mol/m2/s]
-        wombat%caco3_sed_remin(i,j) = wombat%muecaco3_sed * fbc * wombat%caco3_sediment(i,j,1) ! [mol/m2/s]
+        wombat%det_sed_remin(i,j) = wombat%muedbio_sed * fbc * wombat%p_det_sediment(i,j,1) ! [mol/m2/s]
+        wombat%caco3_sed_remin(i,j) = wombat%muecaco3_sed * fbc * wombat%p_caco3_sediment(i,j,1) ! [mol/m2/s]
         
         ! Remineralisation of sediments to supply nutrient fields.
         ! btf values are positive from the water column into the sediment.
@@ -1665,8 +1666,8 @@ module generic_WOMBAT
     !-----------------------------------------------------------------------
     do j = jsc,jec; do i = isc,iec;
       if (grid_kmt(i,j) .gt. 0) then
-        wombat%det_sediment(i,j,1) = wombat%det_sediment(i,j,1) - dt * wombat%det_sed_remin(i,j) ! [mol/m2]
-        wombat%caco3_sediment(i,j,1) = wombat%caco3_sediment(i,j,1) - dt * wombat%caco3_sed_remin(i,j) ! [mol/m2]
+        wombat%p_det_sediment(i,j,1) = wombat%p_det_sediment(i,j,1) - dt * wombat%det_sed_remin(i,j) ! [mol/m2]
+        wombat%p_caco3_sediment(i,j,1) = wombat%p_caco3_sediment(i,j,1) - dt * wombat%caco3_sed_remin(i,j) ! [mol/m2]
       endif
     enddo; enddo
 
@@ -1676,8 +1677,6 @@ module generic_WOMBAT
     call g_tracer_set_values(tracer_list, 'adic', 'btf', wombat%b_adic, isd, jsd)
     call g_tracer_set_values(tracer_list, 'fe', 'btf', wombat%b_fe, isd, jsd)
     call g_tracer_set_values(tracer_list, 'alk', 'btf', wombat%b_alk, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'det_sediment', 'field', wombat%det_sediment, isd, jsd, ntau=1)
-    call g_tracer_set_values(tracer_list, 'caco3_sediment', 'field', wombat%caco3_sediment, isd, jsd, ntau=1)
 
     !=======================================================================
     ! Send diagnostics
@@ -2128,10 +2127,8 @@ module generic_WOMBAT
     allocate(wombat%npp3d(isd:ied, jsd:jed, 1:nk)); wombat%npp3d=0.0
     allocate(wombat%vpbio(isd:ied, jsd:jed, 1:nk)); wombat%vpbio=0.0
     allocate(wombat%avej(isd:ied, jsd:jed, 1:nk)); wombat%avej=0.0
-    allocate(wombat%det_sediment(isd:ied, jsd:jed, 1:nk)); wombat%det_sediment=0.0
     allocate(wombat%det_sed_remin(isd:ied, jsd:jed)); wombat%det_sed_remin=0.0
     allocate(wombat%det_btm(isd:ied, jsd:jed)); wombat%det_btm=0.0
-    allocate(wombat%caco3_sediment(isd:ied, jsd:jed, 1:nk)); wombat%caco3_sediment=0.0
     allocate(wombat%caco3_sed_remin(isd:ied, jsd:jed)); wombat%caco3_sed_remin=0.0
     allocate(wombat%caco3_btm(isd:ied, jsd:jed)); wombat%caco3_btm=0.0
     allocate(wombat%zw(isd:ied, jsd:jed, 1:nk)); wombat%zw=0.0
@@ -2214,10 +2211,8 @@ module generic_WOMBAT
       wombat%npp3d, &
       wombat%vpbio, &
       wombat%avej, &
-      wombat%det_sediment, &
       wombat%det_sed_remin, &
       wombat%det_btm, &
-      wombat%caco3_sediment, &
       wombat%caco3_sed_remin, &
       wombat%caco3_btm, &
       wombat%zw, &
