@@ -156,8 +156,9 @@ module generic_WOMBAT
     real, dimension(:,:), allocatable :: &
       htotallo, htotalhi, htotal,  &
       sio2, &
-      co2_csurf, co2_alpha, pco2_csurf, &
-      aco2_csurf, aco2_alpha, paco2_csurf
+      co2_csurf, co2_alpha, co2_sc_no, pco2_csurf, &
+      aco2_csurf, aco2_alpha, paco2_csurf, &
+      o2_csurf, o2_alpha, o2_sc_no
 
     !-----------------------------------------------------------------------
     ! Arrays for tracer fields and source terms
@@ -225,7 +226,8 @@ module generic_WOMBAT
     real, dimension(:,:,:,:), pointer :: &
       p_dic, &
       p_adic, &
-      p_alk
+      p_alk, &
+      p_o2
 
     !-----------------------------------------------------------------------
     ! IDs for diagnostics
@@ -1890,28 +1892,13 @@ module generic_WOMBAT
     real                                    :: sal, ST, o2_saturation
     real                                    :: tt, tk, ts, ts2, ts3, ts4, ts5
     real, dimension(:,:,:), pointer         :: grid_tmask
-    real, dimension(:,:,:), allocatable     :: dic_field, adic_field, no3_field, alk_field
-    real, dimension(:,:,:,:), pointer       :: o2_field
-    real, dimension(:,:), allocatable       :: co2_alpha, co2_csurf, co2_sc_no
-    real, dimension(:,:), allocatable       :: aco2_alpha, aco2_csurf
-    real, dimension(:,:), allocatable       :: o2_alpha, o2_csurf, o2_sc_no
     character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBAT_set_boundary_values'
 
     ! Get the necessary properties
     call g_tracer_get_common(isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, &
       grid_tmask=grid_tmask)
 
-    ! dts attn: why not use the allocated fields in generic_WOMBAT_type?
-    allocate(co2_alpha(isd:ied, jsd:jed)); co2_alpha=0.0
-    allocate(co2_csurf(isd:ied, jsd:jed)); co2_csurf=0.0
-    allocate(co2_sc_no(isd:ied, jsd:jed)); co2_sc_no=0.0
-    allocate(aco2_alpha(isd:ied, jsd:jed)); aco2_alpha=0.0
-    allocate(aco2_csurf(isd:ied, jsd:jed)); aco2_csurf=0.0
-    allocate(o2_alpha(isd:ied, jsd:jed)); o2_alpha=0.0
-    allocate(o2_csurf(isd:ied, jsd:jed)); o2_csurf=0.0
-    allocate(o2_sc_no(isd:ied, jsd:jed)); o2_sc_no=0.0
-
-    call g_tracer_get_pointer(tracer_list, 'o2', 'field', o2_field)
+    call g_tracer_get_pointer(tracer_list, 'o2', 'field', wombat%p_o2)
     
     ! nnz: Since the generic_WOMBAT_update_from_source() subroutine is called by this time
     ! the following if block is not really necessary (since this calculation is already done in source).
@@ -1921,16 +1908,10 @@ module generic_WOMBAT
     ! Since the coupler values here are non-cumulative there is no need to zero them out anyway.
     if (wombat%init .OR. wombat%force_update_fluxes) then
       ! Get necessary fields
-      ! dts attn: why not use the allocated fields in generic_WOMBAT_type?
-      allocate(dic_field(isd:ied, jsd:jed, nk)); dic_field=0.0
-      allocate(adic_field(isd:ied, jsd:jed, nk)); adic_field=0.0
-      allocate(no3_field(isd:ied, jsd:jed, nk)); no3_field=0.0
-      allocate(alk_field(isd:ied, jsd:jed, nk)); alk_field=0.0
-
-      call g_tracer_get_values(tracer_list, 'dic', 'field', dic_field, isd, jsd, ntau=1, positive=.true.)
-      call g_tracer_get_values(tracer_list, 'adic', 'field', adic_field, isd, jsd, ntau=1, positive=.true.)
-      call g_tracer_get_values(tracer_list, 'no3', 'field', no3_field, isd, jsd, ntau=1, positive=.true.)
-      call g_tracer_get_values(tracer_list, 'alk', 'field', alk_field, isd, jsd, ntau=1, positive=.true.)
+      call g_tracer_get_values(tracer_list, 'dic', 'field', wombat%f_dic, isd, jsd, ntau=1, positive=.true.)
+      call g_tracer_get_values(tracer_list, 'adic', 'field', wombat%f_adic, isd, jsd, ntau=1, positive=.true.)
+      call g_tracer_get_values(tracer_list, 'no3', 'field', wombat%f_no3, isd, jsd, ntau=1, positive=.true.)
+      call g_tracer_get_values(tracer_list, 'alk', 'field', wombat%f_alk, isd, jsd, ntau=1, positive=.true.)
 
       do j = jsc, jec; do i = isc, iec
           wombat%htotallo(i,j) = wombat%htotal_scale_lo * wombat%htotal(i,j)
@@ -1943,43 +1924,43 @@ module generic_WOMBAT
 
       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
         SST(:,:), SSS(:,:), &
-        dic_field(:,:,1), &
-        no3_field(:,:,1) / 16., &
+        wombat%f_dic(:,:,1), &
+        wombat%f_no3(:,:,1) / 16., &
         wombat%sio2(:,:), &
-        alk_field(:,:,1), &
+        wombat%f_alk(:,:,1), &
         wombat%htotallo, wombat%htotalhi, &
         wombat%htotal(:,:), &
         co2_calc=trim(co2_calc), &
         zt=dzt(:,:,1), &
-        co2star=co2_csurf(:,:), alpha=co2_alpha(:,:), &
+        co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), &
         pCO2surf=wombat%pco2_csurf(:,:))
 
       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
         SST(:,:), SSS(:,:), &
-        adic_field(:,:,1), &
-        no3_field(:,:,1) / 16., &
+        wombat%f_adic(:,:,1), &
+        wombat%f_no3(:,:,1) / 16., &
         wombat%sio2(:,:), &
-        alk_field(:,:,1), &
+        wombat%f_alk(:,:,1), &
         wombat%htotallo, wombat%htotalhi, &
         wombat%htotal(:,:), &
         co2_calc=trim(co2_calc), &
         zt=dzt(:,:,1), &
-        co2star=aco2_csurf(:,:), alpha=aco2_alpha(:,:), &
+        co2star=wombat%aco2_csurf(:,:), alpha=wombat%aco2_alpha(:,:), &
         pCO2surf=wombat%paco2_csurf(:,:))
 
-      call g_tracer_set_values(tracer_list, 'dic', 'alpha', co2_alpha, isd, jsd)
-      call g_tracer_set_values(tracer_list, 'dic', 'csurf', co2_csurf, isd, jsd)
-      call g_tracer_set_values(tracer_list, 'adic', 'alpha', aco2_alpha, isd, jsd)
-      call g_tracer_set_values(tracer_list, 'adic', 'csurf', aco2_csurf, isd, jsd)
+      call g_tracer_set_values(tracer_list, 'dic', 'alpha', wombat%co2_alpha, isd, jsd)
+      call g_tracer_set_values(tracer_list, 'dic', 'csurf', wombat%co2_csurf, isd, jsd)
+      call g_tracer_set_values(tracer_list, 'adic', 'alpha', wombat%aco2_alpha, isd, jsd)
+      call g_tracer_set_values(tracer_list, 'adic', 'csurf', wombat%aco2_csurf, isd, jsd)
 
       ! nnz: If source is called uncomment the following
       wombat%init = .false. !nnz: This is necessary since the above calls appear in source subroutine too.
     endif
 
-    call g_tracer_get_values(tracer_list, 'dic', 'alpha', co2_alpha ,isd, jsd)
-    call g_tracer_get_values(tracer_list, 'dic', 'csurf', co2_csurf ,isd, jsd)
-    call g_tracer_get_values(tracer_list, 'adic', 'alpha', aco2_alpha ,isd, jsd)
-    call g_tracer_get_values(tracer_list, 'adic', 'csurf', aco2_csurf ,isd, jsd)
+    call g_tracer_get_values(tracer_list, 'dic', 'alpha', wombat%co2_alpha ,isd, jsd)
+    call g_tracer_get_values(tracer_list, 'dic', 'csurf', wombat%co2_csurf ,isd, jsd)
+    call g_tracer_get_values(tracer_list, 'adic', 'alpha', wombat%aco2_alpha ,isd, jsd)
+    call g_tracer_get_values(tracer_list, 'adic', 'csurf', wombat%aco2_csurf ,isd, jsd)
 
     do j=jsc,jec ; do i=isc,iec
       !-----------------------------------------------------------------------
@@ -1987,26 +1968,26 @@ module generic_WOMBAT
       ! presented by Wanninkhof (1992, J. Geophys. Res., 97, 7373-7382).
       !-----------------------------------------------------------------------
       ST = SST(i,j)
-      co2_sc_no(i,j) = wombat%a1_co2 + ST*(wombat%a2_co2 + ST*(wombat%a3_co2 + ST*wombat%a4_co2)) * &
+      wombat%co2_sc_no(i,j) = wombat%a1_co2 + ST*(wombat%a2_co2 + ST*(wombat%a3_co2 + ST*wombat%a4_co2)) * &
           grid_tmask(i,j,1)
       
-      co2_alpha(i,j) = co2_alpha(i,j) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
-      co2_csurf(i,j) = co2_csurf(i,j) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
-      aco2_alpha(i,j) = aco2_alpha(i,j) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
-      aco2_csurf(i,j) = aco2_csurf(i,j) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
+      wombat%co2_alpha(i,j) = wombat%co2_alpha(i,j) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
+      wombat%co2_csurf(i,j) = wombat%co2_csurf(i,j) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
+      wombat%aco2_alpha(i,j) = wombat%aco2_alpha(i,j) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
+      wombat%aco2_csurf(i,j) = wombat%aco2_csurf(i,j) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
     enddo; enddo
 
     ! Set %csurf, %alpha and %sc_no for these tracers. This will mark them
     ! for sending fluxes to coupler
-    call g_tracer_set_values(tracer_list, 'dic', 'alpha', co2_alpha, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'dic', 'csurf', co2_csurf, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'dic', 'sc_no', co2_sc_no, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'adic', 'alpha', aco2_alpha, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'adic', 'csurf', aco2_csurf, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'adic', 'sc_no', co2_sc_no, isd, jsd)
+    call g_tracer_set_values(tracer_list, 'dic', 'alpha', wombat%co2_alpha, isd, jsd)
+    call g_tracer_set_values(tracer_list, 'dic', 'csurf', wombat%co2_csurf, isd, jsd)
+    call g_tracer_set_values(tracer_list, 'dic', 'sc_no', wombat%co2_sc_no, isd, jsd)
+    call g_tracer_set_values(tracer_list, 'adic', 'alpha', wombat%aco2_alpha, isd, jsd)
+    call g_tracer_set_values(tracer_list, 'adic', 'csurf', wombat%aco2_csurf, isd, jsd)
+    call g_tracer_set_values(tracer_list, 'adic', 'sc_no', wombat%co2_sc_no, isd, jsd)
 
-    call g_tracer_get_values(tracer_list, 'o2', 'alpha', o2_alpha ,isd, jsd)
-    call g_tracer_get_values(tracer_list, 'o2', 'csurf', o2_csurf ,isd, jsd)
+    call g_tracer_get_values(tracer_list, 'o2', 'alpha', wombat%o2_alpha, isd, jsd)
+    call g_tracer_get_values(tracer_list, 'o2', 'csurf', wombat%o2_csurf ,isd, jsd)
 
     do j=jsc,jec ; do i=isc,iec
       !-----------------------------------------------------------------------
@@ -2048,24 +2029,20 @@ module generic_WOMBAT
       !  formulation proposed by Keeling et al. (1998, Global Biogeochem.
       !  Cycles, 12, 141-163).
       !-----------------------------------------------------------------------
-      o2_sc_no(i,j)  = wombat%a1_o2 + ST * (wombat%a2_o2 + ST * (wombat%a3_o2 + ST * wombat%a4_o2 )) * &
+      wombat%o2_sc_no(i,j)  = wombat%a1_o2 + ST * (wombat%a2_o2 + ST * (wombat%a3_o2 + ST * wombat%a4_o2 )) * &
         grid_tmask(i,j,1)
 
       ! renormalize the alpha value for atm o2
       ! data table override for o2_flux_pcair_atm is now set to 0.21
-      o2_alpha(i,j) = (o2_saturation / 0.21)
-      o2_csurf(i,j) = o2_field(i,j,1,tau) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
+      wombat%o2_alpha(i,j) = (o2_saturation / 0.21)
+      wombat%o2_csurf(i,j) = wombat%p_o2(i,j,1,tau) * wombat%Rho_0 !nnz: MOM has rho(i,j,1,tau)
     enddo; enddo
 
     ! Set %csurf, %alpha and %sc_no for these tracers. This will mark them
     ! for sending fluxes to coupler
-    call g_tracer_set_values(tracer_list, 'o2', 'alpha', o2_alpha, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'o2', 'csurf', o2_csurf, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'o2', 'sc_no', o2_sc_no, isd, jsd)
-
-    deallocate(co2_alpha, co2_csurf, co2_sc_no, &
-      aco2_alpha, aco2_csurf, &
-      o2_alpha, o2_csurf, o2_sc_no)
+    call g_tracer_set_values(tracer_list, 'o2', 'alpha', wombat%o2_alpha, isd, jsd)
+    call g_tracer_set_values(tracer_list, 'o2', 'csurf', wombat%o2_csurf, isd, jsd)
+    call g_tracer_set_values(tracer_list, 'o2', 'sc_no', wombat%o2_sc_no, isd, jsd)
 
   end subroutine generic_WOMBAT_set_boundary_values
 
@@ -2114,10 +2091,14 @@ module generic_WOMBAT
     allocate(wombat%sio2(isd:ied, jsd:jed)); wombat%sio2=wombat%sio2_surf
     allocate(wombat%co2_csurf(isd:ied, jsd:jed)); wombat%co2_csurf=0.0
     allocate(wombat%co2_alpha(isd:ied, jsd:jed)); wombat%co2_alpha=0.0
+    allocate(wombat%co2_sc_no(isd:ied, jsd:jed)); wombat%co2_sc_no=0.0
     allocate(wombat%pco2_csurf(isd:ied, jsd:jed)); wombat%pco2_csurf=0.0
     allocate(wombat%aco2_csurf(isd:ied, jsd:jed)); wombat%aco2_csurf=0.0
     allocate(wombat%aco2_alpha(isd:ied, jsd:jed)); wombat%aco2_alpha=0.0
     allocate(wombat%paco2_csurf(isd:ied, jsd:jed)); wombat%paco2_csurf=0.0
+    allocate(wombat%o2_csurf(isd:ied, jsd:jed)); wombat%o2_csurf=0.0
+    allocate(wombat%o2_alpha(isd:ied, jsd:jed)); wombat%o2_alpha=0.0
+    allocate(wombat%o2_sc_no(isd:ied, jsd:jed)); wombat%o2_sc_no=0.0
 
     allocate(wombat%f_dic(isd:ied, jsd:jed, 1:nk)); wombat%f_dic=0.0
     allocate(wombat%f_adic(isd:ied, jsd:jed, 1:nk)); wombat%f_adic=0.0
@@ -2193,10 +2174,14 @@ module generic_WOMBAT
       wombat%htotal, &
       wombat%co2_csurf, &
       wombat%co2_alpha, &
+      wombat%co2_sc_no, &
       wombat%pco2_csurf, &
       wombat%aco2_csurf, &
       wombat%aco2_alpha, &
-      wombat%paco2_csurf)
+      wombat%paco2_csurf, &
+      wombat%o2_csurf, &
+      wombat%o2_alpha, &
+      wombat%o2_sc_no)
 
     deallocate( &
       wombat%f_dic, &
