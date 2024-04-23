@@ -1031,7 +1031,7 @@ module generic_WOMBAT
       units = 'mol/kg', &
       prog = .true., &
       flux_drydep = .true., &
-      flux_param  = (/ 1.0 /), & ! dts attn: need to check params
+      flux_param  = (/ 1.0 /), & ! dts: conversion to mol/m2/s done in data_table
       flux_bottom = .true.)
 
     !=======================================================================
@@ -1459,7 +1459,7 @@ module generic_WOMBAT
           (mmol_m3_to_mol_kg * wombat%k1bio + wombat%f_no3(i,j,k))) ! [1/s]
 
         ! Iron limitation
-        ! dts: convert 0.1 from mmol/m3 to mol/kg
+        ! dts: convert 0.1 from umol/m3 to mol/kg
         u_npz = min(u_npz, wombat%vpbio(i,j,k) * wombat%f_fe(i,j,k) / &
           (umol_m3_to_mol_kg * 0.1 + wombat%f_fe(i,j,k))) ! [1/s]
 
@@ -1716,8 +1716,7 @@ module generic_WOMBAT
 
     if (wombat%id_wdet100 .gt. 0) then
       do j = jsc,jec; do i = isc,iec;
-        ! dts attn: doesn't this just always give the first depth?
-        wombat%wdet100(i,j) = (wombat%Rho_0 * wombat%wdetbio) * wombat%f_det(i,j, minloc(wombat%zm(i,j,:)-100, dim=1)) ! [mol/m2/s]
+        wombat%wdet100(i,j) = (wombat%Rho_0 * wombat%wdetbio) * wombat%f_det(i,j, minloc(abs(wombat%zm(i,j,:)-100), dim=1)) ! [mol/m2/s]
       enddo; enddo
       used = g_send_data(wombat%id_wdet100, wombat%wdet100, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
