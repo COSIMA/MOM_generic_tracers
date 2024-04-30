@@ -13,25 +13,25 @@
 ! </CONTACT>
 !
 ! <OVERVIEW>
-!  This module contains the generic version of WOMBAT.
-!  It is designed so that both GFDL Ocean models, GOLD and MOM, can use it.
+!  This module contains the generic version of WOMBATlite.
+!  It is designed so that both GFDL Ocean models, GOLD and MOM, can use
+!  it.
 ! </OVERVIEW>
 !
 ! <DESCRIPTION>
 !  Whole Ocean Model of Biogeochemistry And Trophic-dynamics (WOMBAT) is
-!  based on a NPZD (nutrient–phytoplankton–zooplankton–detritus) model with
-!  the addition of bio-available iron limitation (Fe), dissolved inorganic
-!  carbon (DIC), calcium carbonate (CaCO3), alkalinity (ALK), and oxygen (O).
-!  In this model we have one class each of phyto-plankton and zooplankton.
+!  based on a NPZD (nutrient–phytoplankton–zooplankton–detritus) model.
+!  This is the "lite" version of WOMBAT which includes one class each of
+!  phyto-plankton and zooplankton and the addition of bio-available iron
+!  limitation (Fe), dissolved inorganic carbon (DIC), calcium carbonate
+!  (CaCO3), alkalinity (ALK), and oxygen (O).
 !  Gas exchange follows OCMIP2 protocols.
 ! </DESCRIPTION>
 !
 ! <INFO>
 !  <REFERENCE>
-!   This model is available for public use.
-!   The current version is WOMBAT v3.1. The version number refers to the core
-!   model behaviour; different tracers exist in different iterations of the
-!   module.
+!   This model is available for public use. Note that different tracers
+!   may exist in different versions of the module.
 !  </REFERENCE>
 !
 !  <DEVELOPER_NOTES>
@@ -41,18 +41,18 @@
 !  </DEVELOPER_NOTES>
 ! </INFO>
 !
-! <NAMELIST NAME="generic_wombat_nml">
+! <NAMELIST NAME="generic_wombatlite_nml">
 !  <DATA NAME="co2_calc" TYPE="character">
-!   Defines the carbon equiliabration method.  Default is 'ocmip2' which uses
-!   the FMS_ocmip2_co2calc routine.  The other option is 'mocsy', which uses
-!   the set of routines authored by J. Orr. See reference at:
+!   Defines the carbon equiliabration method.  Default is 'ocmip2' which
+!   uses the FMS_ocmip2_co2calc routine.  The other option is 'mocsy',
+!   which uses the set of routines authored by J. Orr. See reference at:
 !   http://ocmip5.ipsl.jussieu.fr/mocsy/index.html
 !  </DATA>
 ! </NAMELIST>
 !
 !-----------------------------------------------------------------------
 
-module generic_WOMBAT
+module generic_WOMBATlite
 
   use field_manager_mod, only: fm_string_len
   use mpp_mod,           only: input_nml_file, mpp_error, FATAL
@@ -75,22 +75,22 @@ module generic_WOMBAT
   character(len=128) :: version = '$Id$'
   character(len=128) :: tagname = '$Name$'
 
-  character(len=fm_string_len), parameter :: mod_name     = 'generic_WOMBAT'
-  character(len=fm_string_len), parameter :: package_name = 'generic_wombat'
+  character(len=fm_string_len), parameter :: mod_name     = 'generic_WOMBATlite'
+  character(len=fm_string_len), parameter :: package_name = 'generic_wombatlite'
 
-  public do_generic_WOMBAT
-  public generic_WOMBAT_register
-  public generic_WOMBAT_init
-  public generic_WOMBAT_register_diag
-  public generic_WOMBAT_update_from_coupler
-  public generic_WOMBAT_update_from_source
-  public generic_WOMBAT_update_from_bottom
-  public generic_WOMBAT_set_boundary_values
-  public generic_WOMBAT_end
+  public do_generic_WOMBATlite
+  public generic_WOMBATlite_register
+  public generic_WOMBATlite_init
+  public generic_WOMBATlite_register_diag
+  public generic_WOMBATlite_update_from_coupler
+  public generic_WOMBATlite_update_from_source
+  public generic_WOMBATlite_update_from_bottom
+  public generic_WOMBATlite_set_boundary_values
+  public generic_WOMBATlite_end
 
   ! The following variable for using this module is overwritten by
   ! generic_tracer_nml namelist
-  logical, save :: do_generic_WOMBAT = .false.
+  logical, save :: do_generic_WOMBATlite = .false.
 
   real, parameter :: missing_value1 = -1.0e+10
 
@@ -99,12 +99,12 @@ module generic_WOMBAT
   !=======================================================================
   character(len=10) :: co2_calc = 'ocmip2' ! other option is 'mocsy'
 
-  namelist /generic_wombat_nml/ co2_calc
+  namelist /generic_wombatlite_nml/ co2_calc
 
   !=======================================================================
   ! This type contains all the parameters and arrays used in this module
   !=======================================================================
-  type generic_WOMBAT_type
+  type generic_WOMBATlite_type
     !-----------------------------------------------------------------------
     ! Configurable parameters
     !-----------------------------------------------------------------------
@@ -273,9 +273,9 @@ module generic_WOMBAT
       id_caco3_sed_remin = -1, &
       id_caco3_sed_depst = -1
 
-  end type generic_WOMBAT_type
+  end type generic_WOMBATlite_type
 
-  type(generic_WOMBAT_type), save :: wombat
+  type(generic_WOMBATlite_type), save :: wombat
 
   ! An auxiliary type for storing varible names
   type, public :: vardesc
@@ -294,18 +294,18 @@ module generic_WOMBAT
 
   !#######################################################################
   !
-  ! <SUBROUTINE NAME="generic_WOMBAT_register">
+  ! <SUBROUTINE NAME="generic_WOMBATlite_register">
   !  <OVERVIEW>
-  !   Register the generic WOMBAT module
+  !   Register the generic WOMBATlite module
   !  </OVERVIEW>
   !
   !  <DESCRIPTION>
-  !   This subroutine reads and checks the WOMBAT namelist and adds all
-  !   WOMBAT tracers via subroutine user_add_tracers()
+  !   This subroutine reads and checks the WOMBATlite namelist and adds all
+  !   WOMBATlite tracers via subroutine user_add_tracers()
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
-  !   call generic_WOMBAT_register(tracer_list, force_update_fluxes)
+  !   call generic_WOMBATlite_register(tracer_list, force_update_fluxes)
   !  </TEMPLATE>
   !
   !  <IN NAME="tracer_list" TYPE="type(g_tracer_type), pointer">
@@ -313,13 +313,13 @@ module generic_WOMBAT
   !  </IN>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBAT_register(tracer_list)
+  subroutine generic_WOMBATlite_register(tracer_list)
     type(g_tracer_type), pointer :: tracer_list
 
     integer                                 :: ierr
     integer                                 :: io_status
     integer                                 :: stdoutunit, stdlogunit
-    character(len=fm_string_len), parameter :: sub_name = 'generic_wombat_register'
+    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBATlite_register'
     character(len=256), parameter           :: error_header = &
       '==>Error from ' // trim(mod_name) // '(' // trim(sub_name) // '): '
     character(len=256), parameter           :: warn_header =  &
@@ -332,43 +332,43 @@ module generic_WOMBAT
     ! settings to switch tracers on and off.
     stdoutunit = stdout(); stdlogunit = stdlog()
 
-    read (input_nml_file, nml=generic_wombat_nml, iostat=io_status)
-    ierr = check_nml_error(io_status,'generic_wombat_nml')
+    read (input_nml_file, nml=generic_wombatlite_nml, iostat=io_status)
+    ierr = check_nml_error(io_status, 'generic_wombatlite_nml')
 
     write (stdoutunit,'(/)')
-    write (stdoutunit, generic_wombat_nml)
-    write (stdlogunit, generic_wombat_nml)
+    write (stdoutunit, generic_wombatlite_nml)
+    write (stdlogunit, generic_wombatlite_nml)
 
     if (trim(co2_calc) == 'ocmip2') then
       write (stdoutunit,*) trim(note_header), 'Using FMS OCMIP2 CO2 routine'
     else if (trim(co2_calc) == 'mocsy') then
       write (stdoutunit,*) trim(note_header), 'Using Mocsy CO2 routine'
     else
-      call mpp_error(FATAL,"Unknown co2_calc option specified in generic_wombat_nml")
+      call mpp_error(FATAL,"Unknown co2_calc option specified in generic_wombatlite_nml")
     endif
 
     ! Specify all prognostic and diagnostic tracers of this modules.
     call user_add_tracers(tracer_list)
 
-  end subroutine generic_WOMBAT_register
+  end subroutine generic_WOMBATlite_register
 
   !#######################################################################
   !
-  ! <SUBROUTINE NAME="generic_WOMBAT_init">
+  ! <SUBROUTINE NAME="generic_WOMBATlite_init">
   !  <OVERVIEW>
-  !   Initialize the generic WOMBAT module
+  !   Initialize the generic WOMBATlite module
   !  </OVERVIEW>
   !
   !  <DESCRIPTION>
-  !   This subroutine: adds all the WOMBAT tracers to the list of generic
-  !   tracers passed to it via utility subroutine g_tracer_add(); adds all
-  !   the parameters used by this module via utility subroutine
+  !   This subroutine: adds all the WOMBATlite tracers to the list of
+  !   generic tracers passed to it via utility subroutine g_tracer_add();
+  !   adds all the parameters used by this module via utility subroutine
   !   g_tracer_add_param(); and allocates all work arrays used in the
   !   module.
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
-  !   call generic_WOMBAT_init(tracer_list, force_update_fluxes)
+  !   call generic_WOMBATlite_init(tracer_list, force_update_fluxes)
   !  </TEMPLATE>
   !
   !  <IN NAME="tracer_list" TYPE="type(g_tracer_type), pointer">
@@ -376,17 +376,18 @@ module generic_WOMBAT
   !  </IN>
   !
   !  <IN NAME="force_update_fluxes" TYPE="logical">
-  !   Flag to force update the fluxes every timestep. This maybe be necessary
-  !   in situations where the column_physics (update_from_source) is
-  !   not called every timestep such as when MOM6 THERMO_SPANS_COUPLING=True
+  !   Flag to force update the fluxes every timestep. This maybe be
+  !   necessary in situations where the column_physics (update_from_source)
+  !   is not called every timestep such as when MOM6
+  !   THERMO_SPANS_COUPLING=True
   !  </IN>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBAT_init(tracer_list, force_update_fluxes)
+  subroutine generic_WOMBATlite_init(tracer_list, force_update_fluxes)
     type(g_tracer_type), pointer :: tracer_list
     logical, intent(in)          :: force_update_fluxes
 
-    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBAT_init'
+    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBATlite_init'
 
     wombat%force_update_fluxes = force_update_fluxes
 
@@ -398,11 +399,11 @@ module generic_WOMBAT
     ! Allocate all the private work arrays used by this module.
     call user_allocate_arrays
 
-  end subroutine generic_WOMBAT_init
+  end subroutine generic_WOMBATlite_init
 
   !#######################################################################
   !
-  ! <SUBROUTINE NAME="generic_WOMBAT_register_diag">
+  ! <SUBROUTINE NAME="generic_WOMBATlite_register_diag">
   !  <OVERVIEW>
   !   Register diagnostic fields to be used in this module.
   !  </OVERVIEW>
@@ -415,7 +416,7 @@ module generic_WOMBAT
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
-  !   call generic_WOMBAT_register_diag(diag_list)
+  !   call generic_WOMBATlite_register_diag(diag_list)
   !  </TEMPLATE>
   !
   !  <IN NAME="g_diag_type" TYPE="type(g_diag_type), pointer">
@@ -424,7 +425,7 @@ module generic_WOMBAT
   !  </IN>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBAT_register_diag(diag_list)
+  subroutine generic_WOMBATlite_register_diag(diag_list)
     type(g_diag_type), pointer :: diag_list ! dts: this is not actually used
 
     type(vardesc)   :: vardesc_temp
@@ -438,22 +439,23 @@ module generic_WOMBAT
     ! Register all diagnostics in this module
     !=======================================================================
     !
-    ! The following vardesc types contain a package of metadata about each tracer,
-    ! including, in order, the following elements: name; longname; horizontal
-    ! staggering ('h') for collocation with thickness points ; vertical staggering
-    ! ('L') for a layer variable ; temporal staggering ('s' for snapshot) ; units ;
-    ! and precision in non-restart output files ('f' for 32-bit float or 'd' for
-    ! 64-bit doubles). For most tracers, only the name, longname and units should
-    ! be changed.
+    ! The following vardesc types contain a package of metadata about each
+    ! tracer, including, in order, the following elements: name; longname;
+    ! horizontal staggering ('h') for collocation with thickness points;
+    ! vertical staggering ('L') for a layer variable ; temporal staggering
+    ! ('s' for snapshot) ; units; and precision in non-restart output files
+    ! ('f' for 32-bit float or 'd' for 64-bit doubles). For most tracers, only
+    ! the name, longname and units should be changed.
     !
     ! Niki: The register_diag_field interface needs to be extended to take the
     ! MOM6 axes_grp as argument instead of this integer array axes_grp%handle.
     ! Currently the actual MOM6 diag axes is chosen to be T or Tl based on the
-    ! size of the axes argument, 2 or 3. The actual values of these axes argument
-    ! are not used, only their size is checked to determine the diag axes! This
-    ! is not correct since axesTi and axesTl are both of size 3, likewise there
-    ! are many axes of size 2. To accomodate axesTi with the least amount of code
-    ! modification we can set and check for an input array of size 1.
+    ! size of the axes argument, 2 or 3. The actual values of these axes
+    ! argument are not used, only their size is checked to determine the diag
+    ! axes! This is not correct since axesTi and axesTl are both of size 3,
+    ! likewise there are many axes of size 2. To accomodate axesTi with the
+    ! least amount of code modification we can set and check for an input
+    ! array of size 1.
 
     !=======================================================================
     ! Gas exchange diagnostics
@@ -668,7 +670,7 @@ module generic_WOMBAT
     wombat%id_radbio_int100 = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
       init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
-  end subroutine generic_WOMBAT_register_diag
+  end subroutine generic_WOMBATlite_register_diag
 
   !#######################################################################
   !
@@ -764,9 +766,9 @@ module generic_WOMBAT
     ! NPZD parameters
     !=======================================================================
     ! dts: note the parameter units and default values are as used by WOMBAT
-    ! in ACCESS-OM2 and ACCESS-ESM1.5. Unit conversions are done internally
-    ! to account for the different units carried in this generic version of
-    ! WOMBAT.
+    ! v3 in ACCESS-OM2 and ACCESS-ESM1.5. Unit conversions are done
+    ! internally to account for the different units carried in this generic
+    ! version of WOMBATlite.
 
     ! Initial slope of P-I curve [m2/W/s]
     !-----------------------------------------------------------------------
@@ -868,7 +870,7 @@ module generic_WOMBAT
     type(g_tracer_type), pointer :: tracer_list
 
     character(len=fm_string_len), parameter :: sub_name = 'user_add_tracers'
-    real                                    :: as_coeff_wombat
+    real                                    :: as_coeff_wombatlite
 
     !=======================================================================
     ! Parameters
@@ -879,7 +881,7 @@ module generic_WOMBAT
     ! Air-sea gas exchange coefficient presented in OCMIP2 protocol.
     !-----------------------------------------------------------------------
     ! From Wanninkhof 1992 for steady wind speed (in m/s)
-    as_coeff_wombat = 0.31 / 3.6e5
+    as_coeff_wombatlite = 0.31 / 3.6e5
 
     call g_tracer_start_param_list(package_name)
 
@@ -895,8 +897,8 @@ module generic_WOMBAT
     ! al 2020
     call g_tracer_add_param('wdetbio', wombat%wdetbio, 2.77778e-4)
 
-    call g_tracer_add_param('ice_restart_file', wombat%ice_restart_file, 'ice_wombat.res.nc')
-    call g_tracer_add_param('ocean_restart_file', wombat%ocean_restart_file, 'ocean_wombat.res.nc')
+    call g_tracer_add_param('ice_restart_file', wombat%ice_restart_file, 'ice_wombatlite.res.nc')
+    call g_tracer_add_param('ocean_restart_file', wombat%ocean_restart_file, 'ocean_wombatlite.res.nc')
     call g_tracer_add_param('IC_file', wombat%IC_file, '')
 
     call g_tracer_end_param_list(package_name)
@@ -957,8 +959,8 @@ module generic_WOMBAT
       flux_gas_name = 'o2_flux', &
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMO2, &
-      flux_gas_param = (/ as_coeff_wombat, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc')
+      flux_gas_param = (/ as_coeff_wombatlite, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
+      flux_gas_restart_file = 'ocean_wombatlite_airsea_flux.res.nc')
     
     ! Zooplankton
     !-----------------------------------------------------------------------
@@ -1000,8 +1002,8 @@ module generic_WOMBAT
       flux_gas_name = 'co2_flux', &
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMCO2, &
-      flux_gas_param = (/ as_coeff_wombat, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc')
+      flux_gas_param = (/ as_coeff_wombatlite, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
+      flux_gas_restart_file = 'ocean_wombatlite_airsea_flux.res.nc')
       
     ! DIC (Natural dissolved inorganic carbon)
     !-----------------------------------------------------------------------
@@ -1015,8 +1017,8 @@ module generic_WOMBAT
       flux_gas_name = 'co2_nat_flux', &
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMCO2, &
-      flux_gas_param = (/ as_coeff_wombat, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_wombat_airsea_flux.res.nc')
+      flux_gas_param = (/ as_coeff_wombatlite, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
+      flux_gas_restart_file = 'ocean_wombatlite_airsea_flux.res.nc')
 
     ! Alk (Total carbonate alkalinity)
     !-----------------------------------------------------------------------
@@ -1064,22 +1066,22 @@ module generic_WOMBAT
 
   !#######################################################################
   !
-  ! <SUBROUTINE NAME="generic_WOMBAT_update_from_coupler">
+  ! <SUBROUTINE NAME="generic_WOMBATlite_update_from_coupler">
   !  <OVERVIEW>
   !     Modify the values obtained from the coupler if necessary.
   !  </OVERVIEW>
   !
   !  <DESCRIPTION>
-  !    Some tracer fields could be modified after values are obtained from the
-  !    coupler. This subroutine is the place for specific tracer manipulations.
-  !    WOMBAT currently does not use this.
-  !    Note, this routine is never called in MOM6 since generic_tracer_coupler_get
-  !    is currently commented out (see 
+  !    Some tracer fields could be modified after values are obtained from
+  !    the coupler. This subroutine is the place for specific tracer
+  !    manipulations. WOMBATlite currently does not use this.
+  !    Note, this routine is never called in MOM6 since
+  !    generic_tracer_coupler_get is currently commented out (see
   !    https://github.com/NCAR/MOM6/blob/8f73fb2c11fd66ea4edc0adac25cc4408bbe3269/src/tracer/MOM_generic_tracer.F90#L505)
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
-  !   call generic_WOMBAT_update_from_coupler(tracer_list)
+  !   call generic_WOMBATlite_update_from_coupler(tracer_list)
   !  </TEMPLATE>
   !
   !  <IN NAME="tracer_list" TYPE="type(g_tracer_type), pointer">
@@ -1087,30 +1089,30 @@ module generic_WOMBAT
   !  </IN>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBAT_update_from_coupler(tracer_list)
+  subroutine generic_WOMBATlite_update_from_coupler(tracer_list)
     type(g_tracer_type), pointer :: tracer_list
 
-    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBAT_update_from_coupler'
+    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBATlite_update_from_coupler'
 
-  end subroutine generic_WOMBAT_update_from_coupler
+  end subroutine generic_WOMBATlite_update_from_coupler
 
   !#######################################################################
   !
-  ! <SUBROUTINE NAME="generic_WOMBAT_update_from_bottom">
+  ! <SUBROUTINE NAME="generic_WOMBATlite_update_from_bottom">
   !  <OVERVIEW>
   !   Set values of bottom fluxes and reservoirs
   !  </OVERVIEW>
   !
   !  <DESCRIPTION>
-  !   Some tracers could have bottom fluxes and reservoirs.
-  !   This subroutine is the place for specific tracer manipulations.
-  !   In WOMBAT, remineralization from the sediment tracers (which requires
-  !   temperature) is done in update_from_source. Deposition from sinking
-  !   is handled here.
+  !   Some tracers could have bottom fluxes and reservoirs. This subroutine
+  !   is the place for specific tracer manipulations.
+  !   In WOMBATlite, remineralization from the sediment tracers (which
+  !   requires temperature) is done in update_from_source. Deposition from
+  !   sinking is handled here.
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
-  !   call generic_WOMBAT_update_from_bottom(tracer_list, dt, tau)
+  !   call generic_WOMBATlite_update_from_bottom(tracer_list, dt, tau)
   !  </TEMPLATE>
   !
   !  <IN NAME="tracer_list" TYPE="type(g_tracer_type), pointer">
@@ -1126,7 +1128,7 @@ module generic_WOMBAT
   !  </IN>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBAT_update_from_bottom(tracer_list, dt, tau, model_time)
+  subroutine generic_WOMBATlite_update_from_bottom(tracer_list, dt, tau, model_time)
     type(g_tracer_type), pointer :: tracer_list
     real, intent(in)             :: dt
     integer, intent(in)          :: tau
@@ -1161,23 +1163,24 @@ module generic_WOMBAT
       used = g_send_data(wombat%id_caco3_sed_depst, wombat%caco3_btm / dt, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
-  end subroutine generic_WOMBAT_update_from_bottom
+  end subroutine generic_WOMBATlite_update_from_bottom
 
   !#######################################################################
   !
-  ! <SUBROUTINE NAME="generic_WOMBAT_update_from_source">
+  ! <SUBROUTINE NAME="generic_WOMBATlite_update_from_source">
   !  <OVERVIEW>
   !   Update tracer concentration fields due to the source/sink contributions.
   !  </OVERVIEW>
   !
   !  <DESCRIPTION>
-  !   This is the subroutine to contain most of the biogeochemistry for calculating the
-  !   interaction of tracers with each other and with outside forcings.
+  !   This is the subroutine to contain most of the biogeochemistry for
+  !   calculating the interaction of tracers with each other and with outside
+  !   forcings.
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
-  !   call generic_WOMBAT_update_from_source(tracer_list, Temp, Salt, dzt, &
-  !     hblt_depth, ilb, jlb, tau, dt, grid_dat, sw_pen, opacity)
+  !   call generic_WOMBATlite_update_from_source(tracer_list, Temp, Salt, &
+  !     dzt, hblt_depth, ilb, jlb, tau, dt, grid_dat, sw_pen, opacity)
   !  </TEMPLATE>
   !
   !  <IN NAME="tracer_list" TYPE="type(g_tracer_type), pointer">
@@ -1225,7 +1228,7 @@ module generic_WOMBAT
   !  </IN>
   !
   ! </SUBROUTINE>
-  subroutine generic_WOMBAT_update_from_source(tracer_list, Temp, Salt,  &
+  subroutine generic_WOMBATlite_update_from_source(tracer_list, Temp, Salt,  &
     rho_dzt, dzt, hblt_depth, ilb, jlb, tau, dt, grid_dat, model_time, nbands, &
     max_wavelength_band, sw_pen_band, opacity_band)
     type(g_tracer_type), pointer               :: tracer_list
@@ -1240,7 +1243,7 @@ module generic_WOMBAT
     real, dimension(:,ilb:,jlb:), intent(in)   :: sw_pen_band
     real, dimension(:,ilb:,jlb:,:), intent(in) :: opacity_band
 
-    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBAT_update_from_source'
+    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBATlite_update_from_source'
     integer                                 :: isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, tn
     integer                                 :: i, j, k, n, nz
     real, dimension(:,:,:), pointer         :: grid_tmask
@@ -1833,11 +1836,11 @@ module generic_WOMBAT
       used = g_send_data(wombat%id_caco3_sed_remin, wombat%caco3_sed_remin, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
-  end subroutine generic_WOMBAT_update_from_source
+  end subroutine generic_WOMBATlite_update_from_source
 
   !#######################################################################
   !
-  ! <SUBROUTINE NAME="generic_WOMBAT_set_boundary_values">
+  ! <SUBROUTINE NAME="generic_WOMBATlite_set_boundary_values">
   !  <OVERVIEW>
   !   Calculate and set coupler values at the surface / bottom
   !  </OVERVIEW>
@@ -1848,7 +1851,7 @@ module generic_WOMBAT
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
-  !   call generic_WOMBAT_set_boundary_values(tracer_list, SST, SSS, rho, ilb, jlb, tau, dzt)
+  !   call generic_WOMBATlite_set_boundary_values(tracer_list, SST, SSS, rho, ilb, jlb, tau, dzt)
   !  </TEMPLATE>
   !
   !  <IN NAME="tracer_list" TYPE="type(g_tracer_type), pointer">
@@ -1880,7 +1883,7 @@ module generic_WOMBAT
   !  </IN>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBAT_set_boundary_values(tracer_list, SST, SSS, rho, ilb, jlb, tau, dzt)
+  subroutine generic_WOMBATlite_set_boundary_values(tracer_list, SST, SSS, rho, ilb, jlb, tau, dzt)
     type(g_tracer_type), pointer                       :: tracer_list
     real, dimension(ilb:,jlb:), intent(in)             :: SST, SSS
     real, dimension(ilb:,jlb:,:,:), intent(in)         :: rho
@@ -1891,7 +1894,7 @@ module generic_WOMBAT
     real                                    :: sal, ST, o2_saturation
     real                                    :: tt, tk, ts, ts2, ts3, ts4, ts5
     real, dimension(:,:,:), pointer         :: grid_tmask
-    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBAT_set_boundary_values'
+    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBATlite_set_boundary_values'
 
     ! Get the necessary properties
     call g_tracer_get_common(isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, &
@@ -1899,8 +1902,9 @@ module generic_WOMBAT
 
     call g_tracer_get_pointer(tracer_list, 'o2', 'field', wombat%p_o2)
     
-    ! nnz: Since the generic_WOMBAT_update_from_source() subroutine is called by this time
-    ! the following if block is not really necessary (since this calculation is already done in source).
+    ! nnz: Since the generic_WOMBATlite_update_from_source() subroutine is called by this time
+    ! the following if block is not really necessary (since this calculation is already done in
+    ! source).
     ! It is only neccessary if source routine is commented out for debugging.
     ! Note: In order for this to work we should NOT zero out the coupler values for generic tracers
     ! This zeroing is done for non-generic TOPAZ by calling zero_ocean_sfc.
@@ -2043,11 +2047,11 @@ module generic_WOMBAT
     call g_tracer_set_values(tracer_list, 'o2', 'csurf', wombat%o2_csurf, isd, jsd)
     call g_tracer_set_values(tracer_list, 'o2', 'sc_no', wombat%o2_sc_no, isd, jsd)
 
-  end subroutine generic_WOMBAT_set_boundary_values
+  end subroutine generic_WOMBATlite_set_boundary_values
 
   !#######################################################################
   !
-  ! <SUBROUTINE NAME="generic_WOMBAT_end">
+  ! <SUBROUTINE NAME="generic_WOMBATlite_end">
   !  <OVERVIEW>
   !   End the module.
   !  </OVERVIEW>
@@ -2057,16 +2061,16 @@ module generic_WOMBAT
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
-  !   call generic_WOMBAT_end
+  !   call generic_WOMBATlite_end
   !  </TEMPLATE>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBAT_end
-    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBAT_end'
+  subroutine generic_WOMBATlite_end
+    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBATlite_end'
 
     call user_deallocate_arrays
 
-  end subroutine generic_WOMBAT_end
+  end subroutine generic_WOMBATlite_end
 
   !#######################################################################
   !
@@ -2242,4 +2246,4 @@ module generic_WOMBAT
 
   end subroutine user_deallocate_arrays
 
-end module generic_WOMBAT
+end module generic_WOMBATlite
