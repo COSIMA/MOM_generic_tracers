@@ -1553,7 +1553,7 @@ module generic_WOMBATlite
 
         ! Extra equation for caco3 - alkalinity
         !-----------------------------------------------------------------------
-        ! rjm: 8% of POC 106/16*.08
+        ! rjm: 6.2% of POC by default 106/16*.062
         wombat%f_caco3(i,j,k) = wombat%f_caco3(i,j,k) + dtsb * &
           (((1 - wombat%gam1bio) * f21 + f23 + f32) * wombat%f_inorg * 106. / 16. - f51) ! [mol/kg]
 
