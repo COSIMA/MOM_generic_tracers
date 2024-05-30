@@ -1615,7 +1615,7 @@ module generic_WOMBATlite
         wombat%det_int100(i,j) = wombat%det_int100(i,j) + wombat%f_det(i,j,k) * rho_dzt(i,j,k) ! [mol/m2]
         wombat%pprod_gross_int100(i,j) = wombat%pprod_gross_int100(i,j) + wombat%pprod_gross(i,j,k) * rho_dzt(i,j,k) ! [mol/m2/s]
         wombat%npp_int100(i,j) = wombat%npp_int100(i,j) + wombat%npp3d(i,j,k) * rho_dzt(i,j,k) ! [mol/m2/s]
-        wombat%radbio_int100(i,j) = wombat%radbio_int100(i,j) + wombat%radbio3d(i,j,k) * rho_dzt(i,j,k) ! [W/m]
+        wombat%radbio_int100(i,j) = wombat%radbio_int100(i,j) + wombat%radbio3d(i,j,k) * dzt(i,j,k) ! [W/m]
       endif
     enddo; enddo; enddo
 
