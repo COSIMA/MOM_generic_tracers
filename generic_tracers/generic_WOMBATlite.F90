@@ -928,24 +928,22 @@ module generic_WOMBATlite
 
     ! Nitrate
     !-----------------------------------------------------------------------
+    ! dts: There is currently no sea-ice coupling of Nitrate
     call g_tracer_add(tracer_list, package_name, &
       name = 'no3', &
       longname = 'Nitrate', &
       units = 'mol/kg', &
       prog = .true., &
-      flux_runoff = .true., &
-      flux_param = (/ 1.0 /), & ! dts attn: need to check params
       flux_bottom = .true.)
 
     ! Phytoplankton
     !-----------------------------------------------------------------------
+    ! dts: There is currently no sea-ice coupling of Phytoplankton
     call g_tracer_add(tracer_list, package_name, &
       name = 'phy', &
       longname = 'Phytoplankton', &
       units = 'mol/kg', &
-      prog = .true., &
-      flux_runoff = .true., &
-      flux_param = (/ 1.0 /)) ! dts attn: need to check params
+      prog = .true.)
 
     ! Oxygen
     !-----------------------------------------------------------------------
