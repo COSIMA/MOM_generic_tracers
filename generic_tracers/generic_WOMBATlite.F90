@@ -136,6 +136,11 @@ module generic_WOMBATlite
       tscav_fe, &
       fe_bkgnd, &
       dt_npzd, &
+      sal_global, &
+      dic_global, &
+      adic_global, &
+      alk_global, &
+      no3_global, &
       sio2_surf, &
       htotal_scale_lo, &
       htotal_scale_hi, &
@@ -158,7 +163,8 @@ module generic_WOMBATlite
       sio2, &
       co2_csurf, co2_alpha, co2_sc_no, pco2_csurf, &
       aco2_csurf, aco2_alpha, paco2_csurf, &
-      o2_csurf, o2_alpha, o2_sc_no
+      o2_csurf, o2_alpha, o2_sc_no, &
+      no3_vstf, dic_vstf, adic_vstf, alk_vstf
 
     !-----------------------------------------------------------------------
     ! Arrays for tracer fields and source terms
@@ -231,6 +237,12 @@ module generic_WOMBATlite
       p_det_sediment, &
       p_caco3_sediment
 
+    real, dimension(:,:), pointer :: &
+      p_no3_stf, &
+      p_dic_stf, &
+      p_adic_stf, &
+      p_alk_stf
+
     !-----------------------------------------------------------------------
     ! IDs for diagnostics
     !-----------------------------------------------------------------------
@@ -238,6 +250,10 @@ module generic_WOMBATlite
     integer :: &
       id_pco2 = -1, &
       id_paco2 = -1, &
+      id_no3_vstf = -1, &
+      id_dic_vstf = -1, &
+      id_adic_vstf = -1, &
+      id_alk_vstf = -1, &
       id_light_limit = -1, &
       id_radbio3d = -1, &
       id_radbio1 = -1, &
@@ -458,7 +474,7 @@ module generic_WOMBATlite
     ! array of size 1.
 
     !=======================================================================
-    ! Gas exchange diagnostics
+    ! Surface flux diagnostics
     !=======================================================================
     !
     ! dts: other gas exchange diagnostics are available via the "ocean_flux",
@@ -472,6 +488,30 @@ module generic_WOMBATlite
       'paco2', 'Surface aqueous partial pressure of CO2 inc. anthropogenic', &
       'h', '1', 's', 'uatm', 'f')
     wombat%id_paco2 = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+      init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+      'no3_vstf', 'Virtual flux of nitrate into ocean due to salinity restoring/correction', &
+      'h', '1', 's', 'mol/m^2/s', 'f')
+    wombat%id_no3_vstf = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+      init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+      'dic_vstf', 'Virtual flux of natural dissolved inorganic carbon into ocean due to '// &
+      'salinity restoring/correction', 'h', '1', 's', 'mol/m^2/s', 'f')
+    wombat%id_dic_vstf = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+      init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+      'adic_vstf', 'Virtual flux of natural + anthropogenic dissolved inorganic carbon '// &
+      'into ocean due to salinity restoring/correction', 'h', '1', 's', 'mol/m^2/s', 'f')
+    wombat%id_adic_vstf = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+      init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+      'alk_vstf', 'Virtual flux of alkalinity into ocean due to salinity restoring/correction', &
+      'h', '1', 's', 'mol/m^2/s', 'f')
+    wombat%id_alk_vstf = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
       init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     !=======================================================================
@@ -857,6 +897,26 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     call g_tracer_add_param('dt_npzd', wombat%dt_npzd, 900.)
 
+    ! Global average surface salinity used for virtual flux correction [g/kg]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('sal_global', wombat%sal_global, 34.6)
+
+    ! Global average surface dic used for virtual flux correction [mol/kg]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('dic_global', wombat%dic_global, 1.90e-3)
+
+    ! Global average surface adic used for virtual flux correction [mol/kg]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('adic_global', wombat%adic_global, 1.90e-3)
+
+    ! Global average surface alk used for virtual flux correction [mol/kg]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('alk_global', wombat%alk_global, 2.225e-3)
+
+    ! Global average surface no3 used for virtual flux correction [mol/kg]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('no3_global', wombat%no3_global, 4.512e-06)
+
     call g_tracer_end_param_list(package_name)
 
   end subroutine user_add_params
@@ -934,7 +994,8 @@ module generic_WOMBATlite
       longname = 'Nitrate', &
       units = 'mol/kg', &
       prog = .true., &
-      flux_bottom = .true.)
+      flux_bottom = .true., &
+      flux_virtual = .true.)
 
     ! Phytoplankton
     !-----------------------------------------------------------------------
@@ -1001,7 +1062,8 @@ module generic_WOMBATlite
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMCO2, &
       flux_gas_param = (/ as_coeff_wombatlite, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_wombatlite_airsea_flux.res.nc')
+      flux_gas_restart_file = 'ocean_wombatlite_airsea_flux.res.nc', &
+      flux_virtual = .true.)
       
     ! DIC (Natural dissolved inorganic carbon)
     !-----------------------------------------------------------------------
@@ -1016,7 +1078,8 @@ module generic_WOMBATlite
       flux_gas_type = 'air_sea_gas_flux_generic', &
       flux_gas_molwt = WTMCO2, &
       flux_gas_param = (/ as_coeff_wombatlite, 9.7561e-06 /), & ! dts: param(2) converts Pa -> atm
-      flux_gas_restart_file = 'ocean_wombatlite_airsea_flux.res.nc')
+      flux_gas_restart_file = 'ocean_wombatlite_airsea_flux.res.nc', &
+      flux_virtual = .true.)
 
     ! Alk (Total carbonate alkalinity)
     !-----------------------------------------------------------------------
@@ -1025,7 +1088,8 @@ module generic_WOMBATlite
       longname = 'Alkalinity', &
       units = 'mol/kg', &
       prog = .true., &
-      flux_bottom = .true.)
+      flux_bottom = .true., &
+      flux_virtual = .true.)
 
     ! Dissolved Iron
     !-----------------------------------------------------------------------
@@ -1072,10 +1136,8 @@ module generic_WOMBATlite
   !  <DESCRIPTION>
   !    Some tracer fields could be modified after values are obtained from
   !    the coupler. This subroutine is the place for specific tracer
-  !    manipulations. WOMBATlite currently does not use this.
-  !    Note, this routine is never called in MOM6 since
-  !    generic_tracer_coupler_get is currently commented out (see
-  !    https://github.com/NCAR/MOM6/blob/8f73fb2c11fd66ea4edc0adac25cc4408bbe3269/src/tracer/MOM_generic_tracer.F90#L505)
+  !    manipulations. In WOMBATlite we apply virtual flux corrections due
+  !    to salt flux restoring/correction here.
   !  </DESCRIPTION>
   !
   !  <TEMPLATE>
@@ -1085,12 +1147,38 @@ module generic_WOMBATlite
   !  <IN NAME="tracer_list" TYPE="type(g_tracer_type), pointer">
   !   Pointer to the head of generic tracer list.
   !  </IN>
+  !
+  !  <IN NAME="ilb,jlb" TYPE="integer">
+  !   Lower bounds of x and y extents of input arrays on data domain
+  !  </IN>
+  !
+  !  <IN NAME="salt_flux_added" TYPE="real, dimension(ilb:,jlb:), optional">
+  !   Surface salt flux into ocean from restoring or flux adjustment [g/m2/s]
+  !  </IN>
   ! </SUBROUTINE>
   !
-  subroutine generic_WOMBATlite_update_from_coupler(tracer_list)
-    type(g_tracer_type), pointer :: tracer_list
+  subroutine generic_WOMBATlite_update_from_coupler(tracer_list, ilb, jlb, salt_flux_added)
+    type(g_tracer_type), pointer           :: tracer_list
+    integer, intent(in)                    :: ilb, jlb
+    real, dimension(ilb:,jlb:), intent(in) :: salt_flux_added
 
-    character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBATlite_update_from_coupler'
+    ! Account for virtual fluxes due to salt flux restoring/correction
+    !-----------------------------------------------------------------------
+    call g_tracer_get_pointer(tracer_list, 'no3', 'stf', wombat%p_no3_stf)
+    wombat%no3_vstf(:,:) = (wombat%no3_global / wombat%sal_global) * salt_flux_added(:,:) ! [mol/m2/s]
+    wombat%p_no3_stf(:,:) = wombat%p_no3_stf(:,:) + wombat%no3_vstf(:,:) ! [mol/m2/s]
+
+    call g_tracer_get_pointer(tracer_list, 'dic', 'stf', wombat%p_dic_stf)
+    wombat%dic_vstf(:,:) = (wombat%dic_global / wombat%sal_global) * salt_flux_added(:,:) ! [mol/m2/s]
+    wombat%p_dic_stf(:,:) = wombat%p_dic_stf(:,:) + wombat%dic_vstf(:,:) ! [mol/m2/s]
+
+    call g_tracer_get_pointer(tracer_list, 'adic', 'stf', wombat%p_adic_stf)
+    wombat%adic_vstf(:,:) = (wombat%adic_global / wombat%sal_global) * salt_flux_added(:,:) ! [mol/m2/s]
+    wombat%p_adic_stf(:,:) = wombat%p_adic_stf(:,:) + wombat%adic_vstf(:,:) ! [mol/m2/s]
+
+    call g_tracer_get_pointer(tracer_list, 'alk', 'stf', wombat%p_alk_stf)
+    wombat%alk_vstf(:,:) = (wombat%alk_global / wombat%sal_global) * salt_flux_added(:,:) ! [mol/m2/s]
+    wombat%p_alk_stf(:,:) = wombat%p_alk_stf(:,:) + wombat%alk_vstf(:,:) ! [mol/m2/s]
 
   end subroutine generic_WOMBATlite_update_from_coupler
 
@@ -1691,6 +1779,22 @@ module generic_WOMBATlite
       used = g_send_data(wombat%id_paco2, wombat%paco2_csurf, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
+    if (wombat%id_no3_vstf .gt. 0) &
+      used = g_send_data(wombat%id_no3_vstf, wombat%no3_vstf, model_time, &
+        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_dic_vstf .gt. 0) &
+      used = g_send_data(wombat%id_dic_vstf, wombat%dic_vstf, model_time, &
+        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_adic_vstf .gt. 0) &
+      used = g_send_data(wombat%id_adic_vstf, wombat%adic_vstf, model_time, &
+        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_alk_vstf .gt. 0) &
+      used = g_send_data(wombat%id_alk_vstf, wombat%alk_vstf, model_time, &
+        rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
     if (wombat%id_light_limit .gt. 0) &
       used = g_send_data(wombat%id_light_limit, wombat%light_limit, model_time, &
         rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
@@ -2100,6 +2204,10 @@ module generic_WOMBATlite
     allocate(wombat%o2_csurf(isd:ied, jsd:jed)); wombat%o2_csurf=0.0
     allocate(wombat%o2_alpha(isd:ied, jsd:jed)); wombat%o2_alpha=0.0
     allocate(wombat%o2_sc_no(isd:ied, jsd:jed)); wombat%o2_sc_no=0.0
+    allocate(wombat%no3_vstf(isd:ied, jsd:jed)); wombat%no3_vstf=0.0
+    allocate(wombat%dic_vstf(isd:ied, jsd:jed)); wombat%dic_vstf=0.0
+    allocate(wombat%adic_vstf(isd:ied, jsd:jed)); wombat%adic_vstf=0.0
+    allocate(wombat%alk_vstf(isd:ied, jsd:jed)); wombat%alk_vstf=0.0
 
     allocate(wombat%f_dic(isd:ied, jsd:jed, 1:nk)); wombat%f_dic=0.0
     allocate(wombat%f_adic(isd:ied, jsd:jed, 1:nk)); wombat%f_adic=0.0
@@ -2180,7 +2288,11 @@ module generic_WOMBATlite
       wombat%paco2_csurf, &
       wombat%o2_csurf, &
       wombat%o2_alpha, &
-      wombat%o2_sc_no)
+      wombat%o2_sc_no, &
+      wombat%no3_vstf, &
+      wombat%dic_vstf, &
+      wombat%adic_vstf, &
+      wombat%alk_vstf)
 
     deallocate( &
       wombat%f_dic, &
