@@ -109,3 +109,10 @@ target_link_libraries(gtracers PUBLIC
 
 install(TARGETS gtracers)
 install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/ TYPE INCLUDE)
+
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/gfdl-generic-tracers.pc.in
+               ${CMAKE_CURRENT_BINARY_DIR}/gfdl-generic-tracers.pc @ONLY)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/gfdl-generic-tracers.pc
+              DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+              COMPONENT utilities)
