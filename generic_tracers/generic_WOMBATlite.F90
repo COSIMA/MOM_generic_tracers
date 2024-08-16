@@ -160,6 +160,7 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     real, dimension(:,:), allocatable :: &
         htotallo, htotalhi, htotal,  &
+        ahtotallo, ahtotalhi, ahtotal,  &
         sio2, &
         co2_csurf, co2_alpha, co2_sc_no, pco2_csurf, &
         aco2_csurf, aco2_alpha, paco2_csurf, &
@@ -181,6 +182,8 @@ module generic_WOMBATlite
         light_limit, &
         pprod_gross_2d, &
         wdet100, &
+        export_prod, &
+        export_inorg, &
         npp2d, &
         det_btm, &
         caco3_btm, &
@@ -252,6 +255,8 @@ module generic_WOMBATlite
     integer :: &
         id_pco2 = -1, &
         id_paco2 = -1, &
+        id_htotal = -1, &
+        id_ahtotal = -1, &
         id_no3_vstf = -1, &
         id_dic_vstf = -1, &
         id_adic_vstf = -1, &
@@ -262,6 +267,8 @@ module generic_WOMBATlite
         id_pprod_gross = -1, &
         id_pprod_gross_2d = -1, &
         id_wdet100 = -1, &
+        id_export_prod = -1, &
+        id_export_inorg = -1, &
         id_npp3d = -1, &
         id_npp2d = -1, &
         id_npp1 = -1, &
@@ -493,6 +500,16 @@ module generic_WOMBATlite
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
+        'htotal', 'H+ concentration', 'h', '1', 's', 'mol/kg', 'f')
+    wombat%id_htotal = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'ahtotal', 'H+ concentration inc. anthropogenic', 'h', '1', 's', 'mol/kg', 'f')
+    wombat%id_ahtotal = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
         'no3_vstf', 'Virtual flux of nitrate into ocean due to salinity restoring/correction', &
         'h', '1', 's', 'mol/m^2/s', 'f')
     wombat%id_no3_vstf = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
@@ -565,6 +582,16 @@ module generic_WOMBATlite
         'wdet100', 'Detritus export at 100 m (det*sinking rate)', &
         'h', '1', 's', 'mol/m^2/s', 'f')
     wombat%id_wdet100 = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'export_prod', 'Organic export through 100m', 'h', '1', 's', 'mol/m^2/s', 'f')
+    wombat%id_export_prod = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'export_inorg', 'Inorganic export through 100m', 'h', '1', 's', 'mol/m^2/s', 'f')
+    wombat%id_export_inorg = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
     
     vardesc_temp = vardesc( &
@@ -1336,7 +1363,8 @@ module generic_WOMBATlite
     integer                                 :: i, j, k, n, nz
     real, dimension(:,:,:), pointer         :: grid_tmask
     integer, dimension(:,:), pointer        :: grid_kmt
-    integer, dimension(:,:), allocatable    :: kmeuph ! deepest level of  euphotic zone
+    integer, dimension(:,:), allocatable    :: kmeuph ! deepest level of euphotic zone
+    integer, dimension(:,:), allocatable    :: k100 ! deepest level less than 100 m
     real                                    :: mmol_m3_to_mol_kg, umol_m3_to_mol_kg, mmol2_m6_to_mol2_kg2
     integer                                 :: ts_npzd ! number of time steps within NPZD model
     real                                    :: dtsb ! number of seconds per NPZD timestep
@@ -1391,6 +1419,8 @@ module generic_WOMBATlite
     do j = jsc,jec; do i = isc,iec
       wombat%htotallo(i,j) = wombat%htotal_scale_lo * wombat%htotal(i,j)
       wombat%htotalhi(i,j) = wombat%htotal_scale_hi * wombat%htotal(i,j)
+      wombat%ahtotallo(i,j) = wombat%htotal_scale_lo * wombat%ahtotal(i,j)
+      wombat%ahtotalhi(i,j) = wombat%htotal_scale_hi * wombat%ahtotal(i,j)
     enddo; enddo 
 
     call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
@@ -1412,8 +1442,8 @@ module generic_WOMBATlite
         wombat%f_no3(:,:,1) / 16., &
         wombat%sio2(:,:), &
         wombat%f_alk(:,:,1), &
-        wombat%htotallo(:,:), wombat%htotalhi(:,:), &
-        wombat%htotal(:,:), &
+        wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
+        wombat%ahtotal(:,:), &
         co2_calc=trim(co2_calc), &
         zt=wombat%zw(:,:,1), &
         co2star=wombat%aco2_csurf(:,:), alpha=wombat%aco2_alpha(:,:), &
@@ -1435,6 +1465,8 @@ module generic_WOMBATlite
     wombat%npp3d(:,:,:) = 0.0
     wombat%vpbio(:,:,:) = 0.0
     wombat%avej(:,:,:) = 0.0
+    wombat%export_prod(:,:) = 0.0
+    wombat%export_inorg(:,:) = 0.0
     wombat%adic_intmld(:,:) = 0.0
     wombat%dic_intmld(:,:) = 0.0
     wombat%o2_intmld(:,:) = 0.0
@@ -1462,13 +1494,15 @@ module generic_WOMBATlite
     mmol2_m6_to_mol2_kg2 = mmol_m3_to_mol_kg * mmol_m3_to_mol_kg
     
     ! Set the maximum index for euphotic depth
-    ! dts: in WOMBAT v3, kmeuph is an integer but here it is an array since zw
+    ! dts: in WOMBAT v3, kmeuph and k100 are integers but here they are arrays since zw
     ! may vary spatially
     allocate(kmeuph(isc:iec, jsc:jec)); kmeuph(:,:)=1
+    allocate(k100(isc:iec, jsc:jec)); k100(:,:)=1
     do j = jsc,jec; do i = isc,iec;
       nz = grid_kmt(i,j)
       do k = 1,nz
         if (wombat%zw(i,j,k) .le. 400) kmeuph(i,j)=k
+        if (wombat%zw(i,j,k) .le. 100) k100(i,j)=k
       enddo
     enddo; enddo
 
@@ -1477,8 +1511,27 @@ module generic_WOMBATlite
     rdtts = 1 / dt
     dtsb = dt / float(ts_npzd) ! number of seconds per nested ecosystem timestep
 
+    ! Get the prognostic tracer values
+    ! dts attn: we should probably update prognostic tracers via pointers to avoid
+    ! having to allocate all these field arrays
+    ! dts attn: do we really want/need to force these to be positive?
+    call g_tracer_get_values(tracer_list, 'no3', 'field', wombat%f_no3, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'phy', 'field', wombat%f_phy, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'zoo', 'field', wombat%f_zoo, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'det', 'field', wombat%f_det, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'o2', 'field', wombat%f_o2, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'caco3', 'field', wombat%f_caco3, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'fe', 'field', wombat%f_fe, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+
     !-----------------------------------------------------------------------
-    ! Available light
+    ! Available light and export production
     !-----------------------------------------------------------------------
     do j = jsc,jec; do i = isc,iec
       ! dts: keep only shortwave wavelengths < 710 nm (taken from COBALT/BLING)
@@ -1512,6 +1565,12 @@ module generic_WOMBATlite
           wombat%light_limit(i,j) = wombat%light_limit(i,j) + dzt(i,j,k) * &
               (1.0 - exp(-1.0 * (wombat%alphabio * wombat%radbio3d(i,j,k)) / wombat%vpbio(i,j,k))) ! [m]
       enddo
+
+      ! dts: in WOMBAT v3, export production was calucated before updating the source terms so we do
+      ! the same here
+      k = k100(i,j)
+      wombat%export_prod(i,j) = (wombat%Rho_0 * wombat%wdetbio) * wombat%f_det(i,j,k) ! [mol/m2/s]
+      wombat%export_inorg(i,j) = (wombat%Rho_0 * wombat%wcaco3) * wombat%f_caco3(i,j,k) ! [mol/m2/s]
     enddo; enddo
 
     !-----------------------------------------------------------------------
@@ -1523,24 +1582,6 @@ module generic_WOMBATlite
     !  dZ/dt = a g(P) P Z - d Z - p_Z Z^2
     !  dN/dt = r D + d Z - u(N,Temp.,Light) P  [ + r_d DOC ]
     !  dD/dt = (1-s)[ (1-a) g(P) P Z + p_P P + p_Z Z^2] -r D + w_D dD/dz
-
-    ! dts attn: we should probably update prognostic tracers via pointers to avoid
-    ! having to allocate all these field arrays
-    ! dts attn: do we really want/need to force these to be positive?
-    call g_tracer_get_values(tracer_list, 'no3', 'field', wombat%f_no3, isd, jsd, ntau=tau, &
-        positive=.true.) ! [mol/kg]
-    call g_tracer_get_values(tracer_list, 'phy', 'field', wombat%f_phy, isd, jsd, ntau=tau, &
-        positive=.true.) ! [mol/kg]
-    call g_tracer_get_values(tracer_list, 'zoo', 'field', wombat%f_zoo, isd, jsd, ntau=tau, &
-        positive=.true.) ! [mol/kg]
-    call g_tracer_get_values(tracer_list, 'det', 'field', wombat%f_det, isd, jsd, ntau=tau, &
-        positive=.true.) ! [mol/kg]
-    call g_tracer_get_values(tracer_list, 'o2', 'field', wombat%f_o2, isd, jsd, ntau=tau, &
-        positive=.true.) ! [mol/kg]
-    call g_tracer_get_values(tracer_list, 'caco3', 'field', wombat%f_caco3, isd, jsd, ntau=tau, &
-        positive=.true.) ! [mol/kg]
-    call g_tracer_get_values(tracer_list, 'fe', 'field', wombat%f_fe, isd, jsd, ntau=tau, &
-        positive=.true.) ! [mol/kg]
 
     wombat%no3_prev(:,:,:) = wombat%f_no3(:,:,:)
     wombat%caco3_prev(:,:,:) = wombat%f_caco3(:,:,:)
@@ -1793,6 +1834,14 @@ module generic_WOMBATlite
       used = g_send_data(wombat%id_paco2, wombat%paco2_csurf, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
+    if (wombat%id_htotal .gt. 0) &
+      used = g_send_data(wombat%id_htotal, wombat%htotal, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_ahtotal .gt. 0) &
+      used = g_send_data(wombat%id_ahtotal, wombat%ahtotal, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
     if (wombat%id_no3_vstf .gt. 0) &
       used = g_send_data(wombat%id_no3_vstf, wombat%no3_vstf, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
@@ -1843,6 +1892,14 @@ module generic_WOMBATlite
       used = g_send_data(wombat%id_wdet100, wombat%wdet100, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
     endif
+
+    if (wombat%id_export_prod .gt. 0) &
+      used = g_send_data(wombat%id_export_prod, wombat%export_prod, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_export_inorg .gt. 0) &
+      used = g_send_data(wombat%id_export_inorg, wombat%export_inorg, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
     if (wombat%id_npp3d .gt. 0) &
       used = g_send_data(wombat%id_npp3d, wombat%npp3d, model_time, &
@@ -1954,6 +2011,8 @@ module generic_WOMBATlite
       used = g_send_data(wombat%id_caco3_sed_remin, wombat%caco3_sed_remin, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
+    deallocate(kmeuph, k100)
+
   end subroutine generic_WOMBATlite_update_from_source
 
   !#######################################################################
@@ -2041,6 +2100,8 @@ module generic_WOMBATlite
       do j = jsc, jec; do i = isc, iec
           wombat%htotallo(i,j) = wombat%htotal_scale_lo * wombat%htotal(i,j)
           wombat%htotalhi(i,j) = wombat%htotal_scale_hi * wombat%htotal(i,j)
+          wombat%ahtotallo(i,j) = wombat%htotal_scale_lo * wombat%ahtotal(i,j)
+          wombat%ahtotalhi(i,j) = wombat%htotal_scale_hi * wombat%ahtotal(i,j)
       enddo; enddo 
 
       if ((trim(co2_calc) == 'mocsy') .and. (.not. present(dzt))) then
@@ -2067,8 +2128,8 @@ module generic_WOMBATlite
           wombat%f_no3(:,:,1) / 16., &
           wombat%sio2(:,:), &
           wombat%f_alk(:,:,1), &
-          wombat%htotallo(:,:), wombat%htotalhi(:,:), &
-          wombat%htotal(:,:), &
+          wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
+          wombat%ahtotal(:,:), &
           co2_calc=trim(co2_calc), &
           zt=dzt(:,:,1), &
           co2star=wombat%aco2_csurf(:,:), alpha=wombat%aco2_alpha(:,:), &
@@ -2215,6 +2276,9 @@ module generic_WOMBATlite
     allocate(wombat%htotallo(isd:ied, jsd:jed)); wombat%htotallo(:,:)=0.0
     allocate(wombat%htotalhi(isd:ied, jsd:jed)); wombat%htotalhi(:,:)=0.0
     allocate(wombat%htotal(isd:ied, jsd:jed)); wombat%htotal(:,:)=wombat%htotal_in
+    allocate(wombat%ahtotallo(isd:ied, jsd:jed)); wombat%ahtotallo(:,:)=0.0
+    allocate(wombat%ahtotalhi(isd:ied, jsd:jed)); wombat%ahtotalhi(:,:)=0.0
+    allocate(wombat%ahtotal(isd:ied, jsd:jed)); wombat%ahtotal(:,:)=wombat%htotal_in
     allocate(wombat%sio2(isd:ied, jsd:jed)); wombat%sio2(:,:)=wombat%sio2_surf
     allocate(wombat%co2_csurf(isd:ied, jsd:jed)); wombat%co2_csurf(:,:)=0.0
     allocate(wombat%co2_alpha(isd:ied, jsd:jed)); wombat%co2_alpha(:,:)=0.0
@@ -2255,6 +2319,8 @@ module generic_WOMBATlite
     allocate(wombat%pprod_gross_2d(isd:ied, jsd:jed)); wombat%pprod_gross_2d(:,:)=0.0
     allocate(wombat%zprod_gross(isd:ied, jsd:jed, 1:nk)); wombat%zprod_gross(:,:,:)=0.0
     allocate(wombat%wdet100(isd:ied, jsd:jed)); wombat%wdet100(:,:)=0.0
+    allocate(wombat%export_prod(isd:ied, jsd:jed)); wombat%export_prod(:,:)=0.0
+    allocate(wombat%export_inorg(isd:ied, jsd:jed)); wombat%export_inorg(:,:)=0.0
     allocate(wombat%npp2d(isd:ied, jsd:jed)); wombat%npp2d(:,:)=0.0
     allocate(wombat%npp3d(isd:ied, jsd:jed, 1:nk)); wombat%npp3d(:,:,:)=0.0
     allocate(wombat%vpbio(isd:ied, jsd:jed, 1:nk)); wombat%vpbio(:,:,:)=0.0
@@ -2303,6 +2369,9 @@ module generic_WOMBATlite
         wombat%htotallo, &
         wombat%htotalhi, &
         wombat%htotal, &
+        wombat%ahtotallo, &
+        wombat%ahtotalhi, &
+        wombat%ahtotal, &
         wombat%co2_csurf, &
         wombat%co2_alpha, &
         wombat%co2_sc_no, &
@@ -2345,6 +2414,8 @@ module generic_WOMBATlite
         wombat%pprod_gross_2d, &
         wombat%zprod_gross, &
         wombat%wdet100, &
+        wombat%export_prod, &
+        wombat%export_inorg, &
         wombat%npp2d, &
         wombat%npp3d, &
         wombat%vpbio, &
