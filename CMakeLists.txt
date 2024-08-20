@@ -57,6 +57,7 @@ find_package(MPI REQUIRED COMPONENTS Fortran)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(NETCDF REQUIRED IMPORTED_TARGET "netcdf-fortran")
 pkg_check_modules(FMS REQUIRED IMPORTED_TARGET "FMS")
+pkg_check_modules(MOCSY REQUIRED IMPORTED_TARGET "mocsy")
 
 add_library(gtracers STATIC)
 
@@ -77,34 +78,11 @@ target_sources(gtracers PRIVATE
   generic_tracers/generic_tracer.F90
   generic_tracers/generic_tracer_utils.F90
   generic_tracers/generic_WOMBATlite.F90
-  mocsy/src/mocsy_buffesm.F90
-  mocsy/src/mocsy_constants.F90
-  mocsy/src/mocsy_depth2press.F90
-  mocsy/src/mocsy_derivauto.F90
-  mocsy/src/mocsy_derivnum.F90
-  mocsy/src/mocsy_DNAD.F90
-  mocsy/src/mocsy_errors.F90
-  mocsy/src/mocsy_f2pCO2.F90
-  mocsy/src/mocsy_gasx.F90
-  mocsy/src/mocsy_p2fCO2.F90
-  mocsy/src/mocsy_p80.F90
-  mocsy/src/mocsy_phsolvers.F90
-  mocsy/src/mocsy_rho.F90
-  mocsy/src/mocsy_rhoinsitu.F90
-  mocsy/src/mocsy_singledouble.F90
-  mocsy/src/mocsy_sw_adtg.F90
-  mocsy/src/mocsy_sw_ptmp.F90
-  mocsy/src/mocsy_sw_temp.F90
-  mocsy/src/mocsy_tis.F90
-  mocsy/src/mocsy_tpot.F90
-  mocsy/src/mocsy_vars.F90
-  mocsy/src/mocsy_varsolver.F90
 )
-
-target_include_directories(gtracers PRIVATE mocsy/src/mocsy_DNADHeaders.h)
 
 target_link_libraries(gtracers PUBLIC
 			PkgConfig::FMS
+			PkgConfig::MOCSY
 			PkgConfig::NETCDF)
 
 install(TARGETS gtracers)
