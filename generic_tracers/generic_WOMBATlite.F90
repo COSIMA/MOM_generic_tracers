@@ -19,6 +19,16 @@
 ! </OVERVIEW>
 !
 ! <DESCRIPTION>
+!
+!
+!     (\___/)  .-.   .-. .--. .-..-..---.  .--. .-----.
+!     / o o \  : :.-.: :: ,. :: `' :: .; :: .; :`-. .-'
+!    (   "   ) : :: :: :: :: :: .. ::   .':    :  : :  
+!     \__ __/  : `' `' ;: :; :: :; :: .; :: :: :  : :  
+!               `.,`.,' `.__.':_;:_;:___.':_;:_;  :_;     
+!
+! World Ocean Model of Biogeochemistry And Trophic-dynamics (WOMBAT)
+!
 !  Whole Ocean Model of Biogeochemistry And Trophic-dynamics (WOMBAT) is
 !  based on a NPZD (nutrient–phytoplankton–zooplankton–detritus) model.
 !  This is the "lite" version of WOMBAT which includes one class each of
@@ -216,6 +226,7 @@ module generic_WOMBATlite
         f_alk, &
         f_no3, &
         f_phy, &
+        f_pchl, &
         f_zoo, &
         f_det, &
         f_o2, &
@@ -1035,6 +1046,15 @@ module generic_WOMBATlite
         units = 'mol/kg', &
         prog = .true.)
 
+    ! Phytoplankton Chlorophyll
+    !-----------------------------------------------------------------------
+    ! dts: There is currently no sea-ice coupling of Phytoplankton
+    call g_tracer_add(tracer_list, package_name, &
+        name = 'pchl', &
+        longname = 'Phytoplankton chlorophyll', &
+        units = 'g/kg', &
+        prog = .true.)
+
     ! Oxygen
     !-----------------------------------------------------------------------
     call g_tracer_add(tracer_list, package_name, &
@@ -1519,6 +1539,8 @@ module generic_WOMBATlite
         positive=.true.) ! [mol/kg]
     call g_tracer_get_values(tracer_list, 'phy', 'field', wombat%f_phy, isd, jsd, ntau=tau, &
         positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'pchl', 'field', wombat%f_pchl, isd, jsd, ntau=tau, &
+        positive=.true.) ! [g/kg]
     call g_tracer_get_values(tracer_list, 'zoo', 'field', wombat%f_zoo, isd, jsd, ntau=tau, &
         positive=.true.) ! [mol/kg]
     call g_tracer_get_values(tracer_list, 'det', 'field', wombat%f_det, isd, jsd, ntau=tau, &
@@ -1661,6 +1683,10 @@ module generic_WOMBATlite
         ! Phytoplankton equation
         !-----------------------------------------------------------------------
         wombat%f_phy(i,j,k)  = wombat%f_phy(i,j,k) + dtsb * ((f11 - f21) - (f22 + f23)) ! [mol/kg]
+        
+        ! Phytoplankton chlorophyll equation
+        !-----------------------------------------------------------------------
+        wombat%f_pchl(i,j,k)  = wombat%f_pchl(i,j,k) + dtsb * ((f11 - f21) - (f22 + f23)) ! [g/kg]
 
         ! Estimate primary productivity from phytoplankton growth
         wombat%pprod_gross(i,j,k) = wombat%pprod_gross(i,j,k) + dtsb * f11 ! [mol/kg]
@@ -1775,6 +1801,7 @@ module generic_WOMBATlite
     ! Set tracers values
     call g_tracer_set_values(tracer_list, 'no3', 'field', wombat%f_no3, isd, jsd, ntau=tau)
     call g_tracer_set_values(tracer_list, 'phy', 'field', wombat%f_phy, isd, jsd, ntau=tau)
+    call g_tracer_set_values(tracer_list, 'pchl', 'field', wombat%f_pchl, isd, jsd, ntau=tau)
     call g_tracer_set_values(tracer_list, 'zoo', 'field', wombat%f_zoo, isd, jsd, ntau=tau)
     call g_tracer_set_values(tracer_list, 'det', 'field', wombat%f_det, isd, jsd, ntau=tau)
     call g_tracer_set_values(tracer_list, 'o2', 'field', wombat%f_o2, isd, jsd, ntau=tau)
@@ -2300,6 +2327,7 @@ module generic_WOMBATlite
     allocate(wombat%f_alk(isd:ied, jsd:jed, 1:nk)); wombat%f_alk(:,:,:)=0.0
     allocate(wombat%f_no3(isd:ied, jsd:jed, 1:nk)); wombat%f_no3(:,:,:)=0.0
     allocate(wombat%f_phy(isd:ied, jsd:jed, 1:nk)); wombat%f_phy(:,:,:)=0.0
+    allocate(wombat%f_pchl(isd:ied, jsd:jed, 1:nk)); wombat%f_pchl(:,:,:)=0.0
     allocate(wombat%f_zoo(isd:ied, jsd:jed, 1:nk)); wombat%f_zoo(:,:,:)=0.0
     allocate(wombat%f_det(isd:ied, jsd:jed, 1:nk)); wombat%f_det(:,:,:)=0.0
     allocate(wombat%f_o2(isd:ied, jsd:jed, 1:nk)); wombat%f_o2(:,:,:)=0.0
@@ -2393,6 +2421,7 @@ module generic_WOMBATlite
         wombat%f_alk, &
         wombat%f_no3, &
         wombat%f_phy, &
+        wombat%f_pchl, &
         wombat%f_zoo, &
         wombat%f_det, &
         wombat%f_o2, &
