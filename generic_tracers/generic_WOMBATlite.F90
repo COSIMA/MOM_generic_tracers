@@ -67,7 +67,7 @@ module generic_WOMBATlite
   use field_manager_mod, only: fm_string_len
   use mpp_mod,           only: input_nml_file, mpp_error, FATAL
   use fms_mod,           only: write_version_number, check_nml_error, stdout, stdlog
-  use time_manager_mod,  only: time_type
+  use time_manager_mod,  only: time_type, get_date, days_in_year
   use constants_mod,     only: WTMCO2, WTMO2
 
   use g_tracer_utils, only : g_diag_type, g_tracer_type
@@ -218,7 +218,8 @@ module generic_WOMBATlite
         det_int100, &
         pprod_gross_int100, &
         npp_int100, &
-        radbio_int100
+        radbio_int100, &
+        zeuphot
       
     real, dimension(:,:,:), allocatable :: &
         f_dic, &
@@ -258,6 +259,9 @@ module generic_WOMBATlite
         p_dic_stf, &
         p_adic_stf, &
         p_alk_stf
+
+!    real, dimension(:,:), allocatable :: &
+!        yt 
 
     !-----------------------------------------------------------------------
     ! IDs for diagnostics
@@ -307,7 +311,8 @@ module generic_WOMBATlite
         id_det_sed_remin = -1, &
         id_det_sed_depst = -1, &
         id_caco3_sed_remin = -1, &
-        id_caco3_sed_depst = -1
+        id_caco3_sed_depst = -1, &
+        id_zeuphot = -1
 
   end type generic_WOMBATlite_type
 
@@ -748,6 +753,12 @@ module generic_WOMBATlite
         'radbio_int100', '100m-integrated photosynthetically active radiation for phytoplankton '// &
         'growth', 'h', '1', 's', 'W m-1', 'f')
     wombat%id_radbio_int100 = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'zeuphot', 'Depth of the euphotic zone (defined as 1% of incident light)', &
+        'h', '1', 's', 'm', 'f')
+    wombat%id_zeuphot = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
   end subroutine generic_WOMBATlite_register_diag
@@ -1395,7 +1406,16 @@ module generic_WOMBATlite
     real                                    :: fbc
     real                                    :: f11, f21, f22, f23, f31, f32, f41, f51
     real                                    :: no3_bgc_change, caco3_bgc_change
-    real                                    :: epsi = 1.0e-30
+    real                                    :: epsi = 1.0e-20
+    real                                    :: pi = 3.14159265358979
+    integer                                 :: year, month, day, hour, minute, second, ichl
+    real                                    :: day_angle, declination, cos_hour_angle
+    real                                    :: par_tot_mldsum, par_phy_mldsum, par_z_mldsum
+    real                                    :: chl, zchl, zval
+    real, dimension(:,:), allocatable       :: daylight, keuphot
+    real, dimension(:,:), allocatable       :: ek_bgr, par_bgr
+    real, dimension(:), allocatable         :: par_tot, par_phy, par_eup, par_phymld, chl_lday, phy_lday
+    real, dimension(4,61)                   :: zbgr
     logical                                 :: used
 
     call g_tracer_get_common(isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, &
@@ -1404,6 +1424,7 @@ module generic_WOMBATlite
     ! dts: Note, other generic_tracer modules call this zt. However here we
     ! call this zw to be consistent with WOMBAT v3, which uses MOM5 terminology.
     ! zm here is halfway between interfaces
+!    wombat%yt(:,:) = 0.0
     wombat%zw(:,:,:) = 0.0
     wombat%zm(:,:,:) = 0.0
     do j = jsc,jec; do i = isc,iec
@@ -1414,6 +1435,76 @@ module generic_WOMBATlite
       wombat%zw(i,j,k) = wombat%zw(i,j,k-1) + dzt(i,j,k)
       wombat%zm(i,j,k) = wombat%zw(i,j,k-1) + 0.5 * dzt(i,j,k)
     enddo; enddo ; enddo
+!    do j = jsc,jec; do i = isc,iec
+!      wombat%yt(i,j) = yt(i,j)
+!    enddo; enddo
+
+
+    !=======================================================================
+    ! Attenuation coefficients for blue, green and red light
+    !=======================================================================
+    ! Chlorophyll      ! Blue attenuation    ! Green attenuation   ! Red attenuation
+    zbgr(1, 1) =  0.010; zbgr(2, 1) = 0.01618; zbgr(3, 1) = 0.07464; zbgr(4, 1) = 0.3780
+    zbgr(1, 2) =  0.011; zbgr(2, 2) = 0.01654; zbgr(3, 2) = 0.07480; zbgr(4, 2) = 0.37823
+    zbgr(1, 3) =  0.013; zbgr(2, 3) = 0.01693; zbgr(3, 3) = 0.07499; zbgr(4, 3) = 0.37840
+    zbgr(1, 4) =  0.014; zbgr(2, 4) = 0.01736; zbgr(3, 4) = 0.07518; zbgr(4, 4) = 0.37859
+    zbgr(1, 5) =  0.016; zbgr(2, 5) = 0.01782; zbgr(3, 5) = 0.07539; zbgr(4, 5) = 0.37879
+    zbgr(1, 6) =  0.018; zbgr(2, 6) = 0.01831; zbgr(3, 6) = 0.07562; zbgr(4, 6) = 0.37900
+    zbgr(1, 7) =  0.020; zbgr(2, 7) = 0.01885; zbgr(3, 7) = 0.07586; zbgr(4, 7) = 0.37923
+    zbgr(1, 8) =  0.022; zbgr(2, 8) = 0.01943; zbgr(3, 8) = 0.07613; zbgr(4, 8) = 0.37948
+    zbgr(1, 9) =  0.025; zbgr(2, 9) = 0.02005; zbgr(3, 9) = 0.07641; zbgr(4, 9) = 0.37976
+    zbgr(1,10) =  0.028; zbgr(2,10) = 0.02073; zbgr(3,10) = 0.07672; zbgr(4,10) = 0.38005
+    zbgr(1,11) =  0.032; zbgr(2,11) = 0.02146; zbgr(3,11) = 0.07705; zbgr(4,11) = 0.38036
+    zbgr(1,12) =  0.035; zbgr(2,12) = 0.02224; zbgr(3,12) = 0.07741; zbgr(4,12) = 0.38070
+    zbgr(1,13) =  0.040; zbgr(2,13) = 0.02310; zbgr(3,13) = 0.07780; zbgr(4,13) = 0.38107
+    zbgr(1,14) =  0.045; zbgr(2,14) = 0.02402; zbgr(3,14) = 0.07821; zbgr(4,14) = 0.38146
+    zbgr(1,15) =  0.050; zbgr(2,15) = 0.02501; zbgr(3,15) = 0.07866; zbgr(4,15) = 0.38189
+    zbgr(1,16) =  0.056; zbgr(2,16) = 0.02608; zbgr(3,16) = 0.07914; zbgr(4,16) = 0.38235
+    zbgr(1,17) =  0.063; zbgr(2,17) = 0.02724; zbgr(3,17) = 0.07967; zbgr(4,17) = 0.38285
+    zbgr(1,18) =  0.071; zbgr(2,18) = 0.02849; zbgr(3,18) = 0.08023; zbgr(4,18) = 0.38338
+    zbgr(1,19) =  0.079; zbgr(2,19) = 0.02984; zbgr(3,19) = 0.08083; zbgr(4,19) = 0.38396
+    zbgr(1,20) =  0.089; zbgr(2,20) = 0.03131; zbgr(3,20) = 0.08149; zbgr(4,20) = 0.38458
+    zbgr(1,21) =  0.100; zbgr(2,21) = 0.03288; zbgr(3,21) = 0.08219; zbgr(4,21) = 0.38526
+    zbgr(1,22) =  0.112; zbgr(2,22) = 0.03459; zbgr(3,22) = 0.08295; zbgr(4,22) = 0.38598
+    zbgr(1,23) =  0.126; zbgr(2,23) = 0.03643; zbgr(3,23) = 0.08377; zbgr(4,23) = 0.38676
+    zbgr(1,24) =  0.141; zbgr(2,24) = 0.03842; zbgr(3,24) = 0.08466; zbgr(4,24) = 0.38761
+    zbgr(1,25) =  0.158; zbgr(2,25) = 0.04057; zbgr(3,25) = 0.08561; zbgr(4,25) = 0.38852
+    zbgr(1,26) =  0.178; zbgr(2,26) = 0.04289; zbgr(3,26) = 0.08664; zbgr(4,26) = 0.38950
+    zbgr(1,27) =  0.200; zbgr(2,27) = 0.04540; zbgr(3,27) = 0.08775; zbgr(4,27) = 0.39056
+    zbgr(1,28) =  0.224; zbgr(2,28) = 0.04811; zbgr(3,28) = 0.08894; zbgr(4,28) = 0.39171
+    zbgr(1,29) =  0.251; zbgr(2,29) = 0.05103; zbgr(3,29) = 0.09023; zbgr(4,29) = 0.39294
+    zbgr(1,30) =  0.282; zbgr(2,30) = 0.05420; zbgr(3,30) = 0.09162; zbgr(4,30) = 0.39428
+    zbgr(1,31) =  0.316; zbgr(2,31) = 0.05761; zbgr(3,31) = 0.09312; zbgr(4,31) = 0.39572
+    zbgr(1,32) =  0.355; zbgr(2,32) = 0.06130; zbgr(3,32) = 0.09474; zbgr(4,32) = 0.39727
+    zbgr(1,33) =  0.398; zbgr(2,33) = 0.06529; zbgr(3,33) = 0.09649; zbgr(4,33) = 0.39894
+    zbgr(1,34) =  0.447; zbgr(2,34) = 0.06959; zbgr(3,34) = 0.09837; zbgr(4,34) = 0.40075
+    zbgr(1,35) =  0.501; zbgr(2,35) = 0.07424; zbgr(3,35) = 0.10040; zbgr(4,35) = 0.40270
+    zbgr(1,36) =  0.562; zbgr(2,36) = 0.07927; zbgr(3,36) = 0.10259; zbgr(4,36) = 0.40480
+    zbgr(1,37) =  0.631; zbgr(2,37) = 0.08470; zbgr(3,37) = 0.10495; zbgr(4,37) = 0.40707
+    zbgr(1,38) =  0.708; zbgr(2,38) = 0.09056; zbgr(3,38) = 0.10749; zbgr(4,38) = 0.40952
+    zbgr(1,39) =  0.794; zbgr(2,39) = 0.09690; zbgr(3,39) = 0.11024; zbgr(4,39) = 0.41216
+    zbgr(1,40) =  0.891; zbgr(2,40) = 0.10374; zbgr(3,40) = 0.11320; zbgr(4,40) = 0.41502
+    zbgr(1,41) =  1.000; zbgr(2,41) = 0.11114; zbgr(3,41) = 0.11639; zbgr(4,41) = 0.41809
+    zbgr(1,42) =  1.122; zbgr(2,42) = 0.11912; zbgr(3,42) = 0.11984; zbgr(4,42) = 0.42142
+    zbgr(1,43) =  1.259; zbgr(2,43) = 0.12775; zbgr(3,43) = 0.12356; zbgr(4,43) = 0.42500
+    zbgr(1,44) =  1.413; zbgr(2,44) = 0.13707; zbgr(3,44) = 0.12757; zbgr(4,44) = 0.42887
+    zbgr(1,45) =  1.585; zbgr(2,45) = 0.14715; zbgr(3,45) = 0.13189; zbgr(4,45) = 0.43304
+    zbgr(1,46) =  1.778; zbgr(2,46) = 0.15803; zbgr(3,46) = 0.13655; zbgr(4,46) = 0.43754
+    zbgr(1,47) =  1.995; zbgr(2,47) = 0.16978; zbgr(3,47) = 0.14158; zbgr(4,47) = 0.44240
+    zbgr(1,48) =  2.239; zbgr(2,48) = 0.18248; zbgr(3,48) = 0.14701; zbgr(4,48) = 0.44765
+    zbgr(1,49) =  2.512; zbgr(2,49) = 0.19620; zbgr(3,49) = 0.15286; zbgr(4,49) = 0.45331
+    zbgr(1,50) =  2.818; zbgr(2,50) = 0.21102; zbgr(3,50) = 0.15918; zbgr(4,50) = 0.45942
+    zbgr(1,51) =  3.162; zbgr(2,51) = 0.22703; zbgr(3,51) = 0.16599; zbgr(4,51) = 0.46601
+    zbgr(1,52) =  3.548; zbgr(2,52) = 0.24433; zbgr(3,52) = 0.17334; zbgr(4,52) = 0.47313
+    zbgr(1,53) =  3.981; zbgr(2,53) = 0.26301; zbgr(3,53) = 0.18126; zbgr(4,53) = 0.48080
+    zbgr(1,54) =  4.467; zbgr(2,54) = 0.28320; zbgr(3,54) = 0.18981; zbgr(4,54) = 0.48909
+    zbgr(1,55) =  5.012; zbgr(2,55) = 0.30502; zbgr(3,55) = 0.19903; zbgr(4,55) = 0.49803
+    zbgr(1,56) =  5.623; zbgr(2,56) = 0.32858; zbgr(3,56) = 0.20898; zbgr(4,56) = 0.50768
+    zbgr(1,57) =  6.310; zbgr(2,57) = 0.35404; zbgr(3,57) = 0.21971; zbgr(4,57) = 0.51810
+    zbgr(1,58) =  7.079; zbgr(2,58) = 0.38154; zbgr(3,58) = 0.23129; zbgr(4,58) = 0.52934
+    zbgr(1,59) =  7.943; zbgr(2,59) = 0.41125; zbgr(3,59) = 0.24378; zbgr(4,59) = 0.54147
+    zbgr(1,60) =  8.912; zbgr(2,60) = 0.44336; zbgr(3,60) = 0.25725; zbgr(4,60) = 0.55457
+    zbgr(1,61) = 10.000; zbgr(2,61) = 0.47804; zbgr(3,61) = 0.27178; zbgr(4,61) = 0.56870
 
     !=======================================================================
     ! Surface gas fluxes
@@ -1507,12 +1598,26 @@ module generic_WOMBATlite
     wombat%pprod_gross_int100(:,:) = 0.0
     wombat%npp_int100(:,:) = 0.0
     wombat%radbio_int100(:,:) = 0.0
+    wombat%zeuphot(:,:) = 0.0
 
     ! Some unit conversion factors
     mmol_m3_to_mol_kg = 1.e-3 / wombat%Rho_0
     umol_m3_to_mol_kg = 1.e-3 * mmol_m3_to_mol_kg
     mmol2_m6_to_mol2_kg2 = mmol_m3_to_mol_kg * mmol_m3_to_mol_kg
-    
+   
+    ! Allocate and initialise some multi-dimensional variables
+    allocate(daylight(isc:iec, jsc:jec)); daylight(:,:)=12.0
+    !allocate(zeuphot(isc:iec, jsc:jec)); zeuphot(:,:)=0.0
+    allocate(keuphot(isc:iec, jsc:jec)); keuphot(:,:)=4
+    allocate(ek_bgr(nk,3)); ek_bgr(:,:)=0.0
+    allocate(par_bgr(nk,3)); par_bgr(:,:)=0.0
+    allocate(par_tot(nk)); par_tot(:)=0.0
+    allocate(par_phy(nk)); par_phy(:)=0.0
+    allocate(par_eup(nk)); par_eup(:)=0.0
+    allocate(par_phymld(nk)); par_phymld(:)=0.0
+    allocate(chl_lday(nk)); chl_lday(:)=1e-2
+    allocate(phy_lday(nk)); phy_lday(:)=1e-2
+
     ! Set the maximum index for euphotic depth
     ! dts: in WOMBAT v3, kmeuph and k100 are integers but here they are arrays since zw
     ! may vary spatially
@@ -1551,12 +1656,48 @@ module generic_WOMBATlite
         positive=.true.) ! [mol/kg]
     call g_tracer_get_values(tracer_list, 'fe', 'field', wombat%f_fe, isd, jsd, ntau=tau, &
         positive=.true.) ! [mol/kg]
+    
+    
+    !-----------------------------------------------------------------------!
+    !-----------------------------------------------------------------------!
+    !-----------------------------------------------------------------------!
+    !     (\___/)  .-.   .-. .--. .-..-..---.  .--. .-----.                 !
+    !     / o o \  : :.-.: :: ,. :: `' :: .; :: .; :`-. .-'                 !
+    !    (   "   ) : :: :: :: :: :: .. ::   .':    :  : :                   !
+    !     \__ __/  : `' `' ;: :; :: :; :: .; :: :: :  : :                   !
+    !               `.,`.,' `.__.':_;:_;:___.':_;:_;  :_;                   !
+    !                                                                       !
+    ! World Ocean Model of Biogeochemistry And Trophic-dynamics (WOMBAT)    !
+    !                                                                       !
+    !  Steps:                                                               !
+    !    1.  Light attenuation through water column                         !
+    !    2.  Iron chemistry                                                 !
+    !    3.  Nutrient limitation of phytoplankton                           !
+    !    4.  Light limitation of phytoplankton                              !
+    !    5.  Growth of chlorophyll                                          !
+    !    6.  Phytoplankton uptake of iron                                   !
+    !    7.  Heterotrophy and grazing                                       !
+    !    8.  Mortality scalings                                             !
+    !    9.  Sources and sinks                                              !
+    !    10. Tracer tendencies                                              !
+    !                                                                       !
+    !-----------------------------------------------------------------------!
+    !-----------------------------------------------------------------------!
+    !-----------------------------------------------------------------------!
 
-    !-----------------------------------------------------------------------
-    ! Available light and export production
-    !-----------------------------------------------------------------------
+
+    !-----------------------------------------------------------------------!
+    !-----------------------------------------------------------------------!
+    !-----------------------------------------------------------------------!
+    !  [Step 1] Light attenutation through water column                     !
+    !-----------------------------------------------------------------------!
+    !-----------------------------------------------------------------------!
+    !-----------------------------------------------------------------------!
     do j = jsc,jec; do i = isc,iec
+      !--- Retrieve incident light ---!
       ! dts: keep only shortwave wavelengths < 710 nm (taken from COBALT/BLING)
+      ! pjb: nbands currently hard-coded as equal to 1
+      ! pjb: max_wavelength_band currently hard-coded as equal to 0.0
       do n = 1,nbands;
         if (max_wavelength_band(n) .lt. 710) then
           sw_pen(n) = max(0.0, sw_pen_band(n,i,j))
@@ -1565,28 +1706,119 @@ module generic_WOMBATlite
         endif
       enddo
 
-      do k = 1,kmeuph(i,j)
-        ! Shortwave intensity summed over bands and averaged over layer
-        sw_pen_top = 0.0
-        sw_pen_bottom = 0.0
-        do n = 1,nbands;
-            sw_pen_top = sw_pen_top + sw_pen(n) ! sw at top interface
-            sw_pen(n) = sw_pen(n) * exp(-1.0 * opacity_band(n,i,j,k) * dzt(i,j,k))
-            sw_pen_bottom = sw_pen_bottom + sw_pen(n) ! sw at bottom interface
-        enddo
-        wombat%radbio3d(i,j,k) = 0.5 * (sw_pen_top + sw_pen_bottom) ! [W/m2]
+      !--- Daylength (hours per day) given the latitude and day of year ---!
+!      call get_date(model_time, year, month, day, hour, minute, second)
+!      declination = 0.409 * sin(2.0 * pi * (day-81.0) / days_in_year(model_time))
+!      cos_hour_angle = -tan(wombat%yt(i,j) * pi / 180.0) * tan(declination)
+!      cos_hour_angle = max(min(cos_hour_angle, 1.0), -1.0)
+!      daylight(i,j) = 2.0 * (acos(cos_hour_angle) / pi) * 12.0
 
+      !--- Light field ---!
+      
+      par_tot_mldsum = 0.0
+      par_phy_mldsum = 0.0
+      par_z_mldsum = 0.0
+
+      do k = 1,grid_kmt(i,j)  !{
+
+        ! chlorophyll concentration conversion from g/kg --> mg/m3
+        chl = wombat%f_pchl(i,j,k) / mmol_m3_to_mol_kg 
+
+        ! Attenuation coefficients given chlorophyll concentration
+        zchl = max(0.05, min(10.0, chl) )
+        ichl = nint( 41 + 20.0*log10(zchl) + epsi )
+        ek_bgr(k,1) = zbgr(2,ichl) * dzt(i,j,k)
+        ek_bgr(k,2) = zbgr(3,ichl) * dzt(i,j,k)
+        ek_bgr(k,3) = zbgr(4,ichl) * dzt(i,j,k)
+
+        ! BGR light available in the water column
+        if (k.eq.1) then
+          if (sum(sw_pen(:)).gt.0.0) then
+            par_bgr(k,1) = sum(sw_pen(:)) * 0.43 * 1.0/3.0 * exp(-0.5 * ek_bgr(k,1))
+            par_bgr(k,2) = sum(sw_pen(:)) * 0.43 * 1.0/3.0 * exp(-0.5 * ek_bgr(k,2))
+            par_bgr(k,3) = sum(sw_pen(:)) * 0.43 * 1.0/3.0 * exp(-0.5 * ek_bgr(k,3))
+          else  ! we calculate attentuation in absence of incident light for euphotic zone calculation
+            par_bgr(k,1) = 1.0/3.0 * exp(-0.5 * ek_bgr(k,1))
+            par_bgr(k,2) = 1.0/3.0 * exp(-0.5 * ek_bgr(k,2))
+            par_bgr(k,3) = 1.0/3.0 * exp(-0.5 * ek_bgr(k,3))
+          endif
+        else
+          par_bgr(k,1) = par_bgr(k-1,1) * exp(-0.5 * (ek_bgr(k-1,1)+ek_bgr(k,1)))
+          par_bgr(k,2) = par_bgr(k-1,2) * exp(-0.5 * (ek_bgr(k-1,2)+ek_bgr(k,2)))
+          par_bgr(k,3) = par_bgr(k-1,3) * exp(-0.5 * (ek_bgr(k-1,3)+ek_bgr(k,3)))
+        endif
+
+        ! Light attenuation for phytoplankton
+        if (sum(sw_pen(:)).gt.0.0) then
+          par_tot(k) =        par_bgr(k,1) +        par_bgr(k,2) +        par_bgr(k,3)
+          par_phy(k) = 1.85 * par_bgr(k,1) + 0.68 * par_bgr(k,2) + 0.46 * par_bgr(k,3)
+        else
+          par_tot(k) = 0.0
+          par_phy(k) = 0.0
+        endif
+        par_eup(k) = par_bgr(k,1) + par_bgr(k,2) + par_bgr(k,3)
+
+        ! Integrated light field in the mixed layer
+        if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
+          par_tot_mldsum = par_tot_mldsum + par_tot(k) * dzt(i,j,k)
+          par_phy_mldsum = par_phy_mldsum + par_phy(k) * dzt(i,j,k)
+          par_z_mldsum = par_z_mldsum + dzt(i,j,k)
+        endif
+
+      enddo !} k
+
+      !--- Euphotic zone depth ---!
+      do k = 1,grid_kmt(i,j)  !{
+
+        if (sum(sw_pen(:)).gt.0.0) then
+          if (par_eup(k).gt.(sum(sw_pen(:))*0.43*0.01)) then
+            wombat%zeuphot(i,j) = wombat%zw(i,j,k)
+            keuphot(i,j) = k
+          endif
+        else
+          if (par_eup(k).gt.0.01) then
+            wombat%zeuphot(i,j) = wombat%zw(i,j,k)
+            keuphot(i,j) = k
+          endif
+        endif
+
+      enddo !}
+
+      !--- Aggregate light in mixed layer and calculate rates ---!
+      do k = 1,grid_kmt(i,j)  !{
+
+        ! Calculate average light level in the mixed layer
+        if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
+          zval = 1.0/(par_z_mldsum + epsi )
+          par_phymld(k) = par_phy_mldsum * zval
+        else
+          par_phymld(k) = par_phy(k)
+        endif
+
+        ! Calculate impact of daylength on phytoplankton and chlorophyll production
+!        zval = MAX(1.0, daylight(i,j))
+!        if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
+!          zval = zval * MIN(1.0, (wombat%zeuphot(i,j) + epsi)/(hblt_depth(i,j) + epsi))
+!        endif
+!        chl_lday(k) = zval / 24.0
+!        phy_lday(k) = 1.5 * zval / (12.0 + zval)
+
+        ! Save total PAR to radbio array for diagnostic output
+        wombat%radbio3d(i,j,k) = par_tot(k)
+
+        ! Temperature-dependent maximum growth rate (Eppley curve)
         wombat%vpbio(i,j,k) = wombat%abio * wombat%bbio ** (wombat%cbio * Temp(i,j,k)) ! [1/s]
-
+         
         ! Growth term from Brian Griffiths
         wombat%avej(i,j,k) = wombat%vpbio(i,j,k) * &
             (1.0 - exp(-1.0 * (wombat%alphabio * wombat%radbio3d(i,j,k)) / wombat%vpbio(i,j,k))) ! [1/s]
-
+        
         ! Calculate the average light limitation over the mixed layer
         if (wombat%zw(i,j,k) .le. hblt_depth(i,j)) &
           wombat%light_limit(i,j) = wombat%light_limit(i,j) + dzt(i,j,k) * &
               (1.0 - exp(-1.0 * (wombat%alphabio * wombat%radbio3d(i,j,k)) / wombat%vpbio(i,j,k))) ! [m]
-      enddo
+
+      enddo  !} k
 
       ! dts: in WOMBAT v3, export production was calucated before updating the source terms so we do
       ! the same here
@@ -2038,6 +2270,10 @@ module generic_WOMBATlite
       used = g_send_data(wombat%id_caco3_sed_remin, wombat%caco3_sed_remin, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
+    if (wombat%id_zeuphot .gt. 0) &
+      used = g_send_data(wombat%id_zeuphot, wombat%zeuphot, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
     deallocate(kmeuph, k100)
 
   end subroutine generic_WOMBATlite_update_from_source
@@ -2384,6 +2620,9 @@ module generic_WOMBATlite
     allocate(wombat%npp_int100(isd:ied, jsd:jed)); wombat%npp_int100(:,:)=0.0
     allocate(wombat%radbio_int100(isd:ied, jsd:jed)); wombat%radbio_int100(:,:)=0.0
 
+!    allocate(wombat%yt(isd:ied, jsd:jed)); wombat%yt(:,:)=0.0
+    allocate(wombat%zeuphot(isd:ied, jsd:jed)); wombat%zeuphot(:,:)=0.0
+
   end subroutine user_allocate_arrays
 
   !#######################################################################
@@ -2479,6 +2718,10 @@ module generic_WOMBATlite
         wombat%pprod_gross_int100, &
         wombat%npp_int100, &
         wombat%radbio_int100)
+
+    deallocate( &
+!        wombat%yt, &
+        wombat%zeuphot)
 
   end subroutine user_deallocate_arrays
 
