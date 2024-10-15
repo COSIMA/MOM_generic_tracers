@@ -27,7 +27,7 @@
 !     \__ __/  : `' `' ;: :; :: :; :: .; :: :: :  : :  
 !               `.,`.,' `.__.':_;:_;:___.':_;:_;  :_;     
 !
-! World Ocean Model of Biogeochemistry And Trophic-dynamics (WOMBAT)
+!  World Ocean Model of Biogeochemistry And Trophic-dynamics (WOMBAT)
 !
 !  Whole Ocean Model of Biogeochemistry And Trophic-dynamics (WOMBAT) is
 !  based on a NPZD (nutrient–phytoplankton–zooplankton–detritus) model.
@@ -67,7 +67,7 @@ module generic_WOMBATlite
   use field_manager_mod, only: fm_string_len
   use mpp_mod,           only: input_nml_file, mpp_error, FATAL
   use fms_mod,           only: write_version_number, check_nml_error, stdout, stdlog
-  use time_manager_mod,  only: time_type, get_date, days_in_year
+  use time_manager_mod,  only: time_type
   use constants_mod,     only: WTMCO2, WTMO2
 
   use g_tracer_utils, only : g_diag_type, g_tracer_type
@@ -259,9 +259,6 @@ module generic_WOMBATlite
         p_dic_stf, &
         p_adic_stf, &
         p_alk_stf
-
-!    real, dimension(:,:), allocatable :: &
-!        yt 
 
     !-----------------------------------------------------------------------
     ! IDs for diagnostics
@@ -1063,7 +1060,7 @@ module generic_WOMBATlite
     call g_tracer_add(tracer_list, package_name, &
         name = 'pchl', &
         longname = 'Phytoplankton chlorophyll', &
-        units = 'g/kg', &
+        units = 'mol/kg', &
         prog = .true.)
 
     ! Oxygen
@@ -1983,17 +1980,7 @@ module generic_WOMBATlite
         ! diagnostic determination of a Chl:N ratio depending on light- or
         ! nutrient-limited growth.
 
-      !  ! Growth rate
-      !  ! dts: convert k1bio from mmol/m3 to mol/kg
-      !  u_npz = min(wombat%avej(i,j,k), wombat%vpbio(i,j,k) * wombat%f_no3(i,j,k) / &
-      !      (mmol_m3_to_mol_kg * wombat%k1bio + wombat%f_no3(i,j,k))) ! [1/s]
-
-      !  ! Iron limitation
-      !  ! dts: convert 0.1 from umol/m3 to mol/kg
-      !  u_npz = min(u_npz, wombat%vpbio(i,j,k) * wombat%f_fe(i,j,k) / &
-      !      (umol_m3_to_mol_kg * 0.1 + wombat%f_fe(i,j,k))) ! [1/s]
-
-      u_npz = wombat%avej(i,j,k) * 1.0
+        u_npz = wombat%avej(i,j,k) * 1.0
 
         ! Grazing function
         ! dts: convert epsbio from m6/mmol2/s to kg2/mol2/s
@@ -2047,7 +2034,7 @@ module generic_WOMBATlite
 
         ! Nutrient equation
         !-----------------------------------------------------------------------
-        wombat%f_no3(i,j,k) = wombat%f_no3(i,j,k) + dtsb * 16./122. * ((f41 + f31) + (f22 - f11)) ! [mol/kg]
+        wombat%f_no3(i,j,k) = wombat%f_no3(i,j,k) + dtsb * 16./122. * ((f41 + f31) + (f22 - f11)) ! [molN/kg]
 
         ! Phytoplankton equation
         !-----------------------------------------------------------------------
@@ -2055,7 +2042,7 @@ module generic_WOMBATlite
         
         ! Phytoplankton chlorophyll equation
         !-----------------------------------------------------------------------
-        wombat%f_pchl(i,j,k)  = wombat%f_pchl(i,j,k) + dtsb * ( pchl_mu - (f21 + f22 + f23)*phy_chlc )
+        wombat%f_pchl(i,j,k)  = wombat%f_pchl(i,j,k) + dtsb * (pchl_mu - (f21 + f22 + f23)*phy_chlc) ! [molChl/kg]
 
         ! Estimate primary productivity from phytoplankton growth
         wombat%pprod_gross(i,j,k) = wombat%pprod_gross(i,j,k) + dtsb * f11 ! [molC/kg]
