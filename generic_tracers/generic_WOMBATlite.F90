@@ -2216,8 +2216,11 @@ module generic_WOMBATlite
 
         ! Extra equation for iron ! [molFe/kg]
         !-----------------------------------------------------------------------
-        ! mac: molar Fe:N = 1.98e-5:1.0 (Christian et al. 2002)
-        wombat%f_fe(i,j,k) = wombat%f_fe(i,j,k) + dtsb * 2.597e-6 * ((f41 + f31) + (f22 - f11))
+        wombat%f_fe(i,j,k) = wombat%f_fe(i,j,k) + dtsb * 2.597e-6 * ((f41 + f31) + (f22 - f11)) &
+                                                - dtsb * ( wombat%feprecip(i,j,k) + &
+                                                           wombat%fescaven(i,j,k) + &
+                                                           wombat%feloss(i,j,k) + &
+                                                           wombat%fecoag2det(i,j,k) )
 
       enddo; enddo; enddo
     enddo
@@ -2232,10 +2235,6 @@ module generic_WOMBATlite
     do k = 1,nk; do j = jsc,jec; do i = isc,iec;
       no3_bgc_change = grid_tmask(i,j,k) * (wombat%f_no3(i,j,k) - wombat%no3_prev(i,j,k)) ! [mol/kg]
       caco3_bgc_change = grid_tmask(i,j,k) * (wombat%f_caco3(i,j,k) - wombat%caco3_prev(i,j,k)) ! [mol/kg]
-
-      ! dts: convert fe_bkgnd from umol/m3 to mol/kg
-      wombat%f_fe(i,j,k) = wombat%f_fe(i,j,k) - dt * wombat%tscav_fe * &
-          max(0.0, (wombat%f_fe(i,j,k) - (umol_m3_to_mol_kg * wombat%fe_bkgnd))) ! [mol/kg]
 
       wombat%p_dic(i,j,k,tau) = wombat%p_dic(i,j,k,tau) + &
           (122./16. * no3_bgc_change - caco3_bgc_change) ! [mol/kg]
