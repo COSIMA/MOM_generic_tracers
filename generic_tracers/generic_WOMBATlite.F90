@@ -1106,7 +1106,7 @@ module generic_WOMBATlite
 
     ! Coagulation of dFe into colloidal Fe [mmolC/m3)-1 d-1]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('kcoag_dfe', wombat%kcoag_dfe, 0.001)
+    call g_tracer_add_param('kcoag_dfe', wombat%kcoag_dfe, 0.0001)
 
     ! Iron background concentration [umol Fe m^-3]
     !-----------------------------------------------------------------------
@@ -1636,6 +1636,7 @@ module generic_WOMBATlite
     real                                    :: ztemk, fe_keq, fe_par, fe_sfe, fe_tfe 
     real                                    :: fe_III, fe_lig, partic, fe_col
     real                                    :: fesol1, fesol2, fesol3, fesol4, fesol5, hp, fe3sol, precip
+    real                                    :: biof, lim, biodoc
     real                                    :: phy_Fe2C, zoo_Fe2C, det_Fe2C
     real                                    :: phy_minqfe, phy_maxqfe, phy_dFeupt_upreg, phy_dFeupt_doreg
     logical                                 :: used
@@ -2082,7 +2083,7 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
 
-      ! Estimate solubility of Fe3+ in solution
+      ! Estimate solubility of Fe3+ (free Fe) in solution using temperature, pH and salinity
       ztemk = max(5.0, Temp(i,j,k)) + 273.15    ! temperature in kelvin
       zval = 19.924 * Salt(i,j,k) / ( 1000. - 1.005 * Salt(i,j,k))
       fesol1 = 10**(-13.486 - 0.1856*zval**0.5 + 0.3073*zval + 5254.0/ztemk)
@@ -2095,11 +2096,12 @@ module generic_WOMBATlite
 
       ! Estimate total colloidal iron from Tagliabue et al. 2023 (Nature)
       !fe_col = min( max( (biofer - fe3sol), 0.1 * biofer ), 0.9 * biofer )
-      fe_col = 0.5 * biofer ! Assume 50% of all dFe is colloidal, but remove this later
+      ! Actually, for now, we just assume that 50% of all dFe is colloidal, but we will change this later
+      fe_col = 0.5 * biofer 
 
-      ! Determine equilibrium fractionation of total dFe into Fe' and L-Fe
-      fe_keq = 10**( 17.27 - 1565.7 / ztemk ) * 1e-9
-      fe_par = 4.77e-7 * wombat%radbio3d(i,j,k) * 0.5 / 10**(-6.3)
+      ! Determine equilibriuim fractionation of the remain dFe (non-colloidal fraction) into Fe' and L-Fe
+      fe_keq = 10**( 17.27 - 1565.7 / ztemk ) * 1e-9 ! Temperature reduces solubility
+      fe_par = 4.77e-7 * wombat%radbio3d(i,j,k) * 0.5 / 10**(-6.3) ! Light increases solubility
       fe_sfe = max(0.0, biofer - fe_col)
       fe_tfe = (1.0 + fe_par) * fe_sfe
       fe_III = ( -( 1. + wombat%ligand * fe_keq + fe_par - fe_sfe * fe_keq ) &
@@ -2116,10 +2118,19 @@ module generic_WOMBATlite
       wombat%fescadet(i,j,k) = wombat%fescaven(i,j,k) * biodet / (partic+epsi) 
 
       ! Coagulation of colloidal Fe (umol/m3) to form sinking particles (mmol/m3)
+      !if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
+      !  zval =        ( 0.001 + biodet*wombat%kcoag_dfe )
+      !else
+      !  zval = 0.01 * ( 0.001 + biodet*wombat%kcoag_dfe )
+      !endif
+      ! Following Tagliabue et al. (2023), make coagulation rate dependent on DOC and Phytoplankton biomass
+      biof = max(1/3., biophy / (biophy + 0.03))
+      lim = min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))
+      biodoc = 5.0 + (1.0-lim)*35.0  !!! This is a proxy for DOC concentration (mmol/m3)
       if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
-        zval =        ( 0.001 + biodet*wombat%kcoag_dfe )
+        zval = (      (12.*biof*biodoc + 9.*biodet) + 2.5*biodet + 128.*biof*biodoc + 725.*biodet )*1e-6
       else
-        zval = 0.01 * ( 0.001 + biodet*wombat%kcoag_dfe )
+        zval = ( 0.01*(12.*biof*biodoc + 9.*biodet) + 2.5*biodet + 128.*biof*biodoc + 725.*biodet )*1e-6
       endif
       wombat%fecoag2det(i,j,k) = fe_col * zval / 86400.0
 
