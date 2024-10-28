@@ -264,7 +264,6 @@ module generic_WOMBATlite
         feprecip, &
         fescaven, &
         fescadet, &
-        feloss, &
         fecoag2det, &
         fesources, &
         fesinks, &
@@ -315,7 +314,6 @@ module generic_WOMBATlite
         id_feprecip = -1, &
         id_fescaven = -1, &
         id_fescadet = -1, &
-        id_feloss = -1, &
         id_fecoag2det = -1, &
         id_fesources = -1, &
         id_fesinks = -1, &
@@ -746,11 +744,6 @@ module generic_WOMBATlite
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'feloss', 'Ambiguous loss of dFe in coastal environments', 'h', 'L', 's', 'mol/kg/s', 'f')
-    wombat%id_feloss = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
-        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
-
-    vardesc_temp = vardesc( &
         'fecoag2det', 'Coagulation of colloidal dFe onto detritus', 'h', 'L', 's', 'mol/kg/s', 'f')
     wombat%id_fecoag2det = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
@@ -1018,11 +1011,11 @@ module generic_WOMBATlite
 
     ! Phytoplankton half saturation constant for nitrogen uptake [mmolN/m3]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('phykn', wombat%phykn, 0.7)
+    call g_tracer_add_param('phykn', wombat%phykn, 2.0)
 
     ! Phytoplankton half saturation constant for iron uptake [umolFe/m3]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('phykf', wombat%phykf, 0.1)
+    call g_tracer_add_param('phykf', wombat%phykf, 2.5)
 
     ! Phytoplankton minimum quota of chlorophyll to carbon [mg/mg]
     !-----------------------------------------------------------------------
@@ -1062,7 +1055,7 @@ module generic_WOMBATlite
 
     ! Zooplankton quadratic mortality rate constant [m3/mmolN/s]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zooqmor', wombat%zooqmor, 0.9/86400.0)
+    call g_tracer_add_param('zooqmor', wombat%zooqmor, 0.5/86400.0)
 
     ! Zooplankton respiration rate constant [1/s]
     !-----------------------------------------------------------------------
@@ -1109,7 +1102,7 @@ module generic_WOMBATlite
 
     ! Scavenging of Fe` onto biogenic particles [(mmolC/m3)-1 d-1]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('kscav_dfe', wombat%kscav_dfe, 1e-5)
+    call g_tracer_add_param('kscav_dfe', wombat%kscav_dfe, 0.005)
 
     ! Coagulation of dFe into colloidal Fe [mmolC/m3)-1 d-1]
     !-----------------------------------------------------------------------
@@ -1640,7 +1633,8 @@ module generic_WOMBATlite
     real, dimension(:), allocatable         :: par_mid
     real, dimension(:,:,:), allocatable     :: par_phy, par_phymld
     real, dimension(4,61)                   :: zbgr
-    real                                    :: ztemk, fe_keq, fe_III, fe_lig, partic, fe_col
+    real                                    :: ztemk, fe_keq, fe_par, fe_sfe, fe_tfe 
+    real                                    :: fe_III, fe_lig, partic, fe_col
     real                                    :: fesol1, fesol2, fesol3, fesol4, fesol5, hp, fe3sol, precip
     real                                    :: phy_Fe2C, zoo_Fe2C, det_Fe2C
     real                                    :: phy_minqfe, phy_maxqfe, phy_dFeupt_upreg, phy_dFeupt_doreg
@@ -1809,7 +1803,6 @@ module generic_WOMBATlite
     wombat%feprecip(:,:,:) = 0.0
     wombat%fescaven(:,:,:) = 0.0
     wombat%fescadet(:,:,:) = 0.0
-    wombat%feloss(:,:,:) = 0.0
     wombat%fesources(:,:,:) = 0.0
     wombat%fesinks(:,:,:) = 0.0
     wombat%fecoag2det(:,:,:) = 0.0
@@ -2051,6 +2044,7 @@ module generic_WOMBATlite
       wombat%export_inorg(i,j) = (wombat%Rho_0 * wombat%wcaco3) * wombat%f_caco3(i,j,k) ! [mol/m2/s]
     enddo; enddo
 
+
     !-----------------------------------------------------------------------
     ! Calculate source terms using Euler forward timestepping
     !-----------------------------------------------------------------------
@@ -2088,36 +2082,40 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
 
-      ! Determine equilibrium fractionation of total dFe into Fe' and L-Fe
-      ztemk = Temp(i,j,k)+273.15    ! temperature in kelvin
-      fe_keq = 10**( 17.27 - 1565.7 / ztemk ) * 1e-9
-      fe_III = ( -( 1. + fe_keq * wombat%ligand - fe_keq * biofer ) &
-                 + SQRT( ( 1. + fe_keq * wombat%ligand - fe_keq * biofer )**2 &
-                         + 4. * biofer * fe_keq) ) / ( 2. * fe_keq + epsi )
-      fe_lig = max(0.0, biofer - fe_III)
-
-      ! Precipitation of Fe' (creation of nanoparticles)
+      ! Estimate solubility of Fe3+ in solution
+      ztemk = max(5.0, Temp(i,j,k)) + 273.15    ! temperature in kelvin
       zval = 19.924 * Salt(i,j,k) / ( 1000. - 1.005 * Salt(i,j,k))
-      fesol1 = 10**(-13.486 - 0.1856*zval**0.5 + 0.3073*zval + 5254.0/max(ztemk, 278.15) )
-      fesol2 = 10**(2.517 - 0.8885*zval**0.5 + 0.2139*zval - 1320.0/max(ztemk, 278.15) )
-      fesol3 = 10**(0.4511 - 0.3305*zval**0.5 - 1996.0/max(ztemk, 278.15) )
-      fesol4 = 10**(-0.2965 - 0.7881*zval**0.5 - 4086.0/max(ztemk, 278.15) )
-      fesol5 = 10**(4.4466 - 0.8505*zval**0.5 - 7980.0/max(ztemk, 278.15) )
+      fesol1 = 10**(-13.486 - 0.1856*zval**0.5 + 0.3073*zval + 5254.0/ztemk)
+      fesol2 = 10**(2.517 - 0.8885*zval**0.5 + 0.2139*zval - 1320.0/ztemk)
+      fesol3 = 10**(0.4511 - 0.3305*zval**0.5 - 1996.0/ztemk)
+      fesol4 = 10**(-0.2965 - 0.7881*zval**0.5 - 4086.0/ztemk)
+      fesol5 = 10**(4.4466 - 0.8505*zval**0.5 - 7980.0/ztemk)
       hp = 10**(-7.9)  ! pH currently set at constant value of 7.9
       fe3sol = fesol1 * ( hp**3 + fesol2 * hp**2 + fesol3 * hp + fesol4 + fesol5 / hp ) *1e9
+
+      ! Estimate total colloidal iron from Tagliabue et al. 2023 (Nature)
+      !fe_col = min( max( (biofer - fe3sol), 0.1 * biofer ), 0.9 * biofer )
+      fe_col = 0.5 * biofer ! Assume 50% of all dFe is colloidal, but remove this later
+
+      ! Determine equilibrium fractionation of total dFe into Fe' and L-Fe
+      fe_keq = 10**( 17.27 - 1565.7 / ztemk ) * 1e-9
+      fe_par = 4.77e-7 * wombat%radbio3d(i,j,k) * 0.5 / 10**(-6.3)
+      fe_sfe = max(0.0, biofer - fe_col)
+      fe_tfe = (1.0 + fe_par) * fe_sfe
+      fe_III = ( -( 1. + wombat%ligand * fe_keq + fe_par - fe_sfe * fe_keq ) &
+                 + SQRT( ( 1. + wombat%ligand * fe_keq + fe_par - fe_sfe * fe_keq )**2 &
+                         + 4. * fe_tfe * fe_keq) ) / ( 2. * fe_keq + epsi )
+      fe_lig = max(0.0, fe_sfe - fe_III)
+
+      ! Precipitation of Fe' (creation of nanoparticles)
       wombat%feprecip(i,j,k) = max(0.0, ( fe_III - fe3sol ) ) * wombat%knano_dfe/86400.0
 
       ! Scavenging of Fe` onto biogenic particles 
       partic = (biodet + biocaco3)
-      wombat%fescaven(i,j,k) = fe_III * (3e-8 + wombat%kscav_dfe * partic) / 86400.0
+      wombat%fescaven(i,j,k) = fe_III * (3e-5 + wombat%kscav_dfe * partic) / 86400.0
       wombat%fescadet(i,j,k) = wombat%fescaven(i,j,k) * biodet / (partic+epsi) 
 
-      ! Increased loss of Fe in near-coastal environments
-      zval = min(1.0, 1000.0 / (wombat%zw(i,j,grid_kmt(i,j))+1) )
-      wombat%feloss(i,j,k) = 1e-4 / 86400.0 * zval * biofer
-
-      ! Coagulation of colloidal Fe (umol/m3) into small and large particles (mmol/m3)
-      fe_col = fe_lig * 0.5
+      ! Coagulation of colloidal Fe (umol/m3) to form sinking particles (mmol/m3)
       if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
         zval =        ( 0.001 + biodet*wombat%kcoag_dfe )
       else
@@ -2129,7 +2127,6 @@ module generic_WOMBATlite
       wombat%feprecip(i,j,k) = wombat%feprecip(i,j,k) * umol_m3_to_mol_kg
       wombat%fescaven(i,j,k) = wombat%fescaven(i,j,k) * umol_m3_to_mol_kg
       wombat%fescadet(i,j,k) = wombat%fescadet(i,j,k) * umol_m3_to_mol_kg
-      wombat%feloss(i,j,k) = wombat%feloss(i,j,k) * umol_m3_to_mol_kg
       wombat%fecoag2det(i,j,k) = wombat%fecoag2det(i,j,k) * umol_m3_to_mol_kg
 
 
@@ -2224,7 +2221,6 @@ module generic_WOMBATlite
       wombat%pchl_mu(i,j,k) = wombat%pchl_mu(i,j,k) / 12.0 * mmol_m3_to_mol_kg  ![mol/kg/s]
 
 
-
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
@@ -2246,6 +2242,7 @@ module generic_WOMBATlite
                                   biofer / (biofer + phy_k_fer) * &
                                   phy_dFeupt_doreg * phy_dFeupt_upreg) * mmol_m3_to_mol_kg
 
+
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
@@ -2258,14 +2255,6 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !  [Step 9] Sources and sinks                                           !
-      !-----------------------------------------------------------------------!
-      !-----------------------------------------------------------------------!
-      !-----------------------------------------------------------------------!
-
-      !-----------------------------------------------------------------------!
-      !-----------------------------------------------------------------------!
-      !-----------------------------------------------------------------------!
-      !  [Step 10] Tracer tendencies                                          !
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
@@ -2310,6 +2299,14 @@ module generic_WOMBATlite
           f51 = 0.0
         endif
 
+
+      !-----------------------------------------------------------------------!
+      !-----------------------------------------------------------------------!
+      !-----------------------------------------------------------------------!
+      !  [Step 10] Tracer tendencies                                          !
+      !-----------------------------------------------------------------------!
+      !-----------------------------------------------------------------------!
+      !-----------------------------------------------------------------------!
 
         ! Nitrate equation ! [molN/kg]
         !----------------------------------------------------------------------
@@ -2377,7 +2374,6 @@ module generic_WOMBATlite
                                                           wombat%phy_dfeupt(i,j,k) - &
                                                           wombat%feprecip(i,j,k) - &
                                                           wombat%fescaven(i,j,k) - &
-                                                          wombat%feloss(i,j,k) - &
                                                           wombat%fecoag2det(i,j,k) )
         ! Collect dFe sources and sinks for diagnostic output
         wombat%fesources(i,j,k) = wombat%fesources(i,j,k) + dtsb*rdtts * (f41 * det_Fe2C + &
@@ -2386,7 +2382,6 @@ module generic_WOMBATlite
         wombat%fesinks(i,j,k) = wombat%fesinks(i,j,k) + dtsb*rdtts * (wombat%phy_dfeupt(i,j,k) + &
                                                                       wombat%feprecip(i,j,k) + &
                                                                       wombat%fescaven(i,j,k) + &
-                                                                      wombat%feloss(i,j,k) + &
                                                                       wombat%fecoag2det(i,j,k)) 
 
       enddo; enddo; enddo
@@ -2608,10 +2603,6 @@ module generic_WOMBATlite
 
     if (wombat%id_fescadet .gt. 0) &
       used = g_send_data(wombat%id_fescadet, wombat%fescadet, model_time, &
-          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
-
-    if (wombat%id_feloss .gt. 0) &
-      used = g_send_data(wombat%id_feloss, wombat%feloss, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_fecoag2det .gt. 0) &
@@ -3102,7 +3093,6 @@ module generic_WOMBATlite
     allocate(wombat%feprecip(isd:ied, jsd:jed, 1:nk)); wombat%feprecip(:,:,:)=0.0
     allocate(wombat%fescaven(isd:ied, jsd:jed, 1:nk)); wombat%fescaven(:,:,:)=0.0
     allocate(wombat%fescadet(isd:ied, jsd:jed, 1:nk)); wombat%fescadet(:,:,:)=0.0
-    allocate(wombat%feloss(isd:ied, jsd:jed, 1:nk)); wombat%feloss(:,:,:)=0.0
     allocate(wombat%fecoag2det(isd:ied, jsd:jed, 1:nk)); wombat%fecoag2det(:,:,:)=0.0
     allocate(wombat%fesources(isd:ied, jsd:jed, 1:nk)); wombat%fesources(:,:,:)=0.0
     allocate(wombat%fesinks(isd:ied, jsd:jed, 1:nk)); wombat%fesinks(:,:,:)=0.0
@@ -3220,7 +3210,6 @@ module generic_WOMBATlite
         wombat%feprecip, &
         wombat%fescaven, &
         wombat%fescadet, &
-        wombat%feloss, &
         wombat%fecoag2det, &
         wombat%fesources, &
         wombat%fesinks, &
