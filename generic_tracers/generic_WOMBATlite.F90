@@ -153,7 +153,6 @@ module generic_WOMBATlite
         ligand, &
         knano_dfe, &
         kscav_dfe, &
-        kcoag_dfe, &
         fe_bkgnd, &
         dt_npzd, &
         sal_global, &
@@ -1103,10 +1102,6 @@ module generic_WOMBATlite
     ! Scavenging of Fe` onto biogenic particles [(mmolC/m3)-1 d-1]
     !-----------------------------------------------------------------------
     call g_tracer_add_param('kscav_dfe', wombat%kscav_dfe, 0.005)
-
-    ! Coagulation of dFe into colloidal Fe [mmolC/m3)-1 d-1]
-    !-----------------------------------------------------------------------
-    call g_tracer_add_param('kcoag_dfe', wombat%kcoag_dfe, 0.0001)
 
     ! Iron background concentration [umol Fe m^-3]
     !-----------------------------------------------------------------------
