@@ -1636,7 +1636,7 @@ module generic_WOMBATlite
     real                                    :: ztemk, fe_keq, fe_par, fe_sfe, fe_tfe 
     real                                    :: fe_III, fe_lig, partic, fe_col
     real                                    :: fesol1, fesol2, fesol3, fesol4, fesol5, hp, fe3sol, precip
-    real                                    :: biof, lim, biodoc
+    real                                    :: biof, biodoc
     real                                    :: phy_Fe2C, zoo_Fe2C, det_Fe2C
     real                                    :: phy_minqfe, phy_maxqfe, phy_dFeupt_upreg, phy_dFeupt_doreg
     logical                                 :: used
@@ -2094,9 +2094,8 @@ module generic_WOMBATlite
       hp = 10**(-7.9)  ! pH currently set at constant value of 7.9
       fe3sol = fesol1 * ( hp**3 + fesol2 * hp**2 + fesol3 * hp + fesol4 + fesol5 / hp ) *1e9
 
-      ! Estimate total colloidal iron from Tagliabue et al. 2023 (Nature)
-      !fe_col = min( max( (biofer - fe3sol), 0.1 * biofer ), 0.9 * biofer )
-      ! Actually, for now, we just assume that 50% of all dFe is colloidal, but we will change this later
+      ! Estimate total colloidal iron
+      ! ... for now, we assume that 50% of all dFe is colloidal
       fe_col = 0.5 * biofer 
 
       ! Determine equilibriuim fractionation of the remain dFe (non-colloidal fraction) into Fe' and L-Fe
@@ -2118,15 +2117,9 @@ module generic_WOMBATlite
       wombat%fescadet(i,j,k) = wombat%fescaven(i,j,k) * biodet / (partic+epsi) 
 
       ! Coagulation of colloidal Fe (umol/m3) to form sinking particles (mmol/m3)
-      !if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
-      !  zval =        ( 0.001 + biodet*wombat%kcoag_dfe )
-      !else
-      !  zval = 0.01 * ( 0.001 + biodet*wombat%kcoag_dfe )
-      !endif
       ! Following Tagliabue et al. (2023), make coagulation rate dependent on DOC and Phytoplankton biomass
       biof = max(1/3., biophy / (biophy + 0.03))
-      lim = min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))
-      biodoc = 5.0 + (1.0-lim)*35.0  !!! This is a proxy for DOC concentration (mmol/m3)
+      biodoc = 2.0 + (1.0 - min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))) * 38.0 ! proxy of DOC (mmol/m3)
       if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
         zval = (      (12.*biof*biodoc + 9.*biodet) + 2.5*biodet + 128.*biof*biodoc + 725.*biodet )*1e-6
       else
@@ -2172,7 +2165,7 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
 
       ! Temperature dependance of heterotrophy
-      fbc = wombat%bbioh ** (Temp(i,j,k)) 
+      fbc = wombat%bbioh ** (Temp(i,j,k))
 
       ! Grazing function ! [1/s]
       g_npz = wombat%zoogmax * fbc * (wombat%zooepsi * biophy * biophy) / &
