@@ -178,13 +178,16 @@ module generic_WOMBATlite
     ! Arrays for surface gas fluxes
     !-----------------------------------------------------------------------
     real, dimension(:,:), allocatable :: &
-        htotallo, htotalhi, htotal,  &
-        ahtotallo, ahtotalhi, ahtotal,  &
+        htotallo, htotalhi,  &
+        ahtotallo, ahtotalhi,  &
         sio2, &
         co2_csurf, co2_alpha, co2_sc_no, pco2_csurf, &
         aco2_csurf, aco2_alpha, paco2_csurf, &
         o2_csurf, o2_alpha, o2_sc_no, &
         no3_vstf, dic_vstf, adic_vstf, alk_vstf
+
+    real, dimension(:,:,:), allocatable :: &
+        htotal, ahtotal
 
     !-----------------------------------------------------------------------
     ! Arrays for tracer fields and source terms
@@ -559,12 +562,12 @@ module generic_WOMBATlite
 
     vardesc_temp = vardesc( &
         'htotal', 'H+ concentration', 'h', '1', 's', 'mol/kg', 'f')
-    wombat%id_htotal = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+    wombat%id_htotal = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
         'ahtotal', 'H+ concentration inc. anthropogenic', 'h', '1', 's', 'mol/kg', 'f')
-    wombat%id_ahtotal = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+    wombat%id_ahtotal = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
@@ -1740,44 +1743,73 @@ module generic_WOMBATlite
         positive=.true.)
     call g_tracer_get_values(tracer_list, 'alk', 'field', wombat%f_alk, isd, jsd, ntau=tau, &
         positive=.true.)
-  
-    do j = jsc,jec; do i = isc,iec
-      wombat%htotallo(i,j) = wombat%htotal_scale_lo * wombat%htotal(i,j)
-      wombat%htotalhi(i,j) = wombat%htotal_scale_hi * wombat%htotal(i,j)
-      wombat%ahtotallo(i,j) = wombat%htotal_scale_lo * wombat%ahtotal(i,j)
-      wombat%ahtotalhi(i,j) = wombat%htotal_scale_hi * wombat%ahtotal(i,j)
-    enddo; enddo 
+ 
+    do k = 1,nk !{ 
+     do j = jsc,jec; do i = isc,iec
+       wombat%htotallo(i,j) = wombat%htotal_scale_lo * wombat%htotal(i,j,k)
+       wombat%htotalhi(i,j) = wombat%htotal_scale_hi * wombat%htotal(i,j,k)
+       wombat%ahtotallo(i,j) = wombat%htotal_scale_lo * wombat%ahtotal(i,j,k)
+       wombat%ahtotalhi(i,j) = wombat%htotal_scale_hi * wombat%ahtotal(i,j,k)
+     enddo; enddo 
 
-    call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
-        Temp(:,:,1), Salt(:,:,1), &
-        wombat%f_dic(:,:,1), &
-        wombat%f_no3(:,:,1) / 16., &
-        wombat%sio2(:,:), &
-        wombat%f_alk(:,:,1), &
-        wombat%htotallo(:,:), wombat%htotalhi(:,:), &
-        wombat%htotal(:,:), &
-        co2_calc=trim(co2_calc), &
-        zt=wombat%zw(:,:,1), &
-        co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), &
-        pCO2surf=wombat%pco2_csurf(:,:))
+     if (k.eq.1) then !{
+       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
+           Temp(:,:,k), Salt(:,:,k), &
+           wombat%f_dic(:,:,k), &
+           wombat%f_no3(:,:,k) / 16., &
+           wombat%sio2(:,:), &
+           wombat%f_alk(:,:,k), &
+           wombat%htotallo(:,:), wombat%htotalhi(:,:), &
+           wombat%htotal(:,:,k), &
+           co2_calc=trim(co2_calc), &
+           zt=wombat%zw(:,:,k), &
+           co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), &
+           pCO2surf=wombat%pco2_csurf(:,:))
+ 
+       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
+           Temp(:,:,k), Salt(:,:,k), &
+           wombat%f_adic(:,:,k), &
+           wombat%f_no3(:,:,k) / 16., &
+           wombat%sio2(:,:), &
+           wombat%f_alk(:,:,k), &
+           wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
+           wombat%ahtotal(:,:,k), &
+           co2_calc=trim(co2_calc), &
+           zt=wombat%zw(:,:,k), &
+           co2star=wombat%aco2_csurf(:,:), alpha=wombat%aco2_alpha(:,:), &
+           pCO2surf=wombat%paco2_csurf(:,:))
 
-    call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
-        Temp(:,:,1), Salt(:,:,1), &
-        wombat%f_adic(:,:,1), &
-        wombat%f_no3(:,:,1) / 16., &
-        wombat%sio2(:,:), &
-        wombat%f_alk(:,:,1), &
-        wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
-        wombat%ahtotal(:,:), &
-        co2_calc=trim(co2_calc), &
-        zt=wombat%zw(:,:,1), &
-        co2star=wombat%aco2_csurf(:,:), alpha=wombat%aco2_alpha(:,:), &
-        pCO2surf=wombat%paco2_csurf(:,:))
+       call g_tracer_set_values(tracer_list, 'dic', 'alpha', wombat%co2_alpha, isd, jsd)
+       call g_tracer_set_values(tracer_list, 'dic', 'csurf', wombat%co2_csurf, isd, jsd)
+       call g_tracer_set_values(tracer_list, 'adic', 'alpha', wombat%aco2_alpha, isd, jsd)
+       call g_tracer_set_values(tracer_list, 'adic', 'csurf', wombat%aco2_csurf, isd, jsd)
 
-    call g_tracer_set_values(tracer_list, 'dic', 'alpha', wombat%co2_alpha, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'dic', 'csurf', wombat%co2_csurf, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'adic', 'alpha', wombat%aco2_alpha, isd, jsd)
-    call g_tracer_set_values(tracer_list, 'adic', 'csurf', wombat%aco2_csurf, isd, jsd)
+     else
+
+       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
+           Temp(:,:,k), Salt(:,:,k), &
+           wombat%f_dic(:,:,k), &
+           wombat%f_no3(:,:,k) / 16., &
+           wombat%sio2(:,:), &
+           wombat%f_alk(:,:,k), &
+           wombat%htotallo(:,:), wombat%htotalhi(:,:), &
+           wombat%htotal(:,:,k), &
+           co2_calc=trim(co2_calc), &
+           zt=wombat%zw(:,:,k))
+ 
+       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
+           Temp(:,:,k), Salt(:,:,k), &
+           wombat%f_adic(:,:,k), &
+           wombat%f_no3(:,:,k) / 16., &
+           wombat%sio2(:,:), &
+           wombat%f_alk(:,:,k), &
+           wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
+           wombat%ahtotal(:,:,k), &
+           co2_calc=trim(co2_calc), &
+           zt=wombat%zw(:,:,k))
+
+     endif !} if k.eq.1
+   enddo !} do k = 1,nk
 
     !=======================================================================
     ! Calculate the source terms
@@ -2086,7 +2118,7 @@ module generic_WOMBATlite
       fesol3 = 10**(0.4511 - 0.3305*zval**0.5 - 1996.0/ztemk)
       fesol4 = 10**(-0.2965 - 0.7881*zval**0.5 - 4086.0/ztemk)
       fesol5 = 10**(4.4466 - 0.8505*zval**0.5 - 7980.0/ztemk)
-      hp = 10**(-7.9)  ! pH currently set at constant value of 7.9
+      hp = wombat%ahtotal(i,j,k)
       fe3sol = fesol1 * ( hp**3 + fesol2 * hp**2 + fesol3 * hp + fesol4 + fesol5 / hp ) *1e9
 
       ! Estimate total colloidal iron
@@ -2522,11 +2554,11 @@ module generic_WOMBATlite
 
     if (wombat%id_htotal .gt. 0) &
       used = g_send_data(wombat%id_htotal, wombat%htotal, model_time, &
-          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_ahtotal .gt. 0) &
       used = g_send_data(wombat%id_ahtotal, wombat%ahtotal, model_time, &
-          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_no3_vstf .gt. 0) &
       used = g_send_data(wombat%id_no3_vstf, wombat%no3_vstf, model_time, &
@@ -2852,10 +2884,10 @@ module generic_WOMBATlite
           positive=.true.)
 
       do j = jsc, jec; do i = isc, iec
-          wombat%htotallo(i,j) = wombat%htotal_scale_lo * wombat%htotal(i,j)
-          wombat%htotalhi(i,j) = wombat%htotal_scale_hi * wombat%htotal(i,j)
-          wombat%ahtotallo(i,j) = wombat%htotal_scale_lo * wombat%ahtotal(i,j)
-          wombat%ahtotalhi(i,j) = wombat%htotal_scale_hi * wombat%ahtotal(i,j)
+          wombat%htotallo(i,j) = wombat%htotal_scale_lo * wombat%htotal(i,j,1)
+          wombat%htotalhi(i,j) = wombat%htotal_scale_hi * wombat%htotal(i,j,1)
+          wombat%ahtotallo(i,j) = wombat%htotal_scale_lo * wombat%ahtotal(i,j,1)
+          wombat%ahtotalhi(i,j) = wombat%htotal_scale_hi * wombat%ahtotal(i,j,1)
       enddo; enddo 
 
       if ((trim(co2_calc) == 'mocsy') .and. (.not. present(dzt))) then
@@ -2870,7 +2902,7 @@ module generic_WOMBATlite
           wombat%sio2(:,:), &
           wombat%f_alk(:,:,1), &
           wombat%htotallo(:,:), wombat%htotalhi(:,:), &
-          wombat%htotal(:,:), &
+          wombat%htotal(:,:,1), &
           co2_calc=trim(co2_calc), &
           zt=dzt(:,:,1), &
           co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), &
@@ -2883,7 +2915,7 @@ module generic_WOMBATlite
           wombat%sio2(:,:), &
           wombat%f_alk(:,:,1), &
           wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
-          wombat%ahtotal(:,:), &
+          wombat%ahtotal(:,:,1), &
           co2_calc=trim(co2_calc), &
           zt=dzt(:,:,1), &
           co2star=wombat%aco2_csurf(:,:), alpha=wombat%aco2_alpha(:,:), &
@@ -3029,10 +3061,10 @@ module generic_WOMBATlite
 
     allocate(wombat%htotallo(isd:ied, jsd:jed)); wombat%htotallo(:,:)=0.0
     allocate(wombat%htotalhi(isd:ied, jsd:jed)); wombat%htotalhi(:,:)=0.0
-    allocate(wombat%htotal(isd:ied, jsd:jed)); wombat%htotal(:,:)=wombat%htotal_in
+    allocate(wombat%htotal(isd:ied, jsd:jed, 1:nk)); wombat%htotal(:,:,:)=wombat%htotal_in
     allocate(wombat%ahtotallo(isd:ied, jsd:jed)); wombat%ahtotallo(:,:)=0.0
     allocate(wombat%ahtotalhi(isd:ied, jsd:jed)); wombat%ahtotalhi(:,:)=0.0
-    allocate(wombat%ahtotal(isd:ied, jsd:jed)); wombat%ahtotal(:,:)=wombat%htotal_in
+    allocate(wombat%ahtotal(isd:ied, jsd:jed, 1:nk)); wombat%ahtotal(:,:,:)=wombat%htotal_in
     allocate(wombat%sio2(isd:ied, jsd:jed)); wombat%sio2(:,:)=wombat%sio2_surf
     allocate(wombat%co2_csurf(isd:ied, jsd:jed)); wombat%co2_csurf(:,:)=0.0
     allocate(wombat%co2_alpha(isd:ied, jsd:jed)); wombat%co2_alpha(:,:)=0.0
