@@ -2387,7 +2387,7 @@ module generic_WOMBATlite
         wombat%phygrow(i,j,k) = 0.0
       endif
 
-      if (wombat%f_phy(i,j,k) .gt. 1e-3) then
+      if (biophy .gt. 1e-3) then
         wombat%zoograz(i,j,k) = g_npz * wombat%f_zoo(i,j,k) ! [molC/kg/s]
         wombat%phyresp(i,j,k) = wombat%phylmor * fbc * wombat%f_phy(i,j,k) ! [molC/kg/s]
         wombat%phymort(i,j,k) = wombat%phyqmor / mmol_m3_to_mol_kg * wombat%f_phy(i,j,k) * wombat%f_phy(i,j,k) ! [molC/kg/s]
@@ -2399,7 +2399,7 @@ module generic_WOMBATlite
         wombat%zooexcr(i,j,k) = wombat%zoograz(i,j,k) * (1.0 - wombat%zooassi)*0.75
         wombat%zooslop(i,j,k) = wombat%zoograz(i,j,k) * (1.0 - wombat%zooassi)*0.25
       
-      if (wombat%f_zoo(i,j,k) .gt. 1e-3) then
+      if (biozoo .gt. 1e-3) then
         wombat%zooresp(i,j,k) = wombat%zoolmor * fbc * wombat%f_zoo(i,j,k) * zoo_slmor ! [molC/kg/s]
         wombat%zoomort(i,j,k) = wombat%zooqmor / mmol_m3_to_mol_kg * wombat%f_zoo(i,j,k) * wombat%f_zoo(i,j,k) ! [molC/kg/s]
       else
