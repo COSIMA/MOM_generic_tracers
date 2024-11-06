@@ -264,6 +264,9 @@ module generic_WOMBATlite
         phy_lnit, &
         phy_lfer, &
         phy_dfeupt, &
+        feIII, &
+        felig, &
+        fecol, &
         feprecip, &
         fescaven, &
         fescadet, &
@@ -324,6 +327,9 @@ module generic_WOMBATlite
         id_phy_lnit = -1, &
         id_phy_lfer = -1, &
         id_phy_dfeupt = -1, &
+        id_feIII = -1, &
+        id_felig = -1, &
+        id_fecol = -1, &
         id_feprecip = -1, &
         id_fescaven = -1, &
         id_fescadet = -1, &
@@ -582,12 +588,12 @@ module generic_WOMBATlite
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'htotal', 'H+ concentration', 'h', '1', 's', 'mol/kg', 'f')
+        'htotal', 'H+ concentration', 'h', 'L', 's', 'mol/kg', 'f')
     wombat%id_htotal = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'ahtotal', 'H+ concentration inc. anthropogenic', 'h', '1', 's', 'mol/kg', 'f')
+        'ahtotal', 'H+ concentration inc. anthropogenic', 'h', 'L', 's', 'mol/kg', 'f')
     wombat%id_ahtotal = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
@@ -1690,7 +1696,7 @@ module generic_WOMBATlite
     real                                    :: swpar
     real                                    :: u_npz, g_npz
     real                                    :: biophy, biozoo, biodet, biono3, biofer, biocaco3
-    real                                    :: biophyfe, biozoofe, biodetfe
+    real                                    :: biophyfe 
     real                                    :: fbc
     real                                    :: no3_bgc_change, caco3_bgc_change
     real                                    :: epsi = 1.0e-30
@@ -1705,9 +1711,8 @@ module generic_WOMBATlite
     real, dimension(:), allocatable         :: par_mid
     real, dimension(:,:,:), allocatable     :: par_phy, par_phymld
     real, dimension(4,61)                   :: zbgr
-    real                                    :: ztemk, fe_keq, fe_par, fe_sfe, fe_tfe 
-    real                                    :: fe_III, fe_lig, partic, fe_col
-    real                                    :: fesol1, fesol2, fesol3, fesol4, fesol5, hp, fe3sol, precip
+    real                                    :: ztemk, fe_keq, fe_par, fe_sfe, fe_tfe, partic
+    real                                    :: fesol1, fesol2, fesol3, fesol4, fesol5, hp, fe3sol
     real                                    :: biof, biodoc
     real                                    :: phy_Fe2C, zoo_Fe2C, det_Fe2C
     real                                    :: phy_minqfe, phy_maxqfe, phy_dFeupt_upreg, phy_dFeupt_doreg
@@ -1903,6 +1908,9 @@ module generic_WOMBATlite
     wombat%phy_lnit(:,:,:) = 1.0
     wombat%phy_lfer(:,:,:) = 1.0
     wombat%phy_dfeupt(:,:,:) = 0.0
+    wombat%feIII(:,:,:) = 0.0
+    wombat%felig(:,:,:) = 0.0
+    wombat%fecol(:,:,:) = 0.0
     wombat%feprecip(:,:,:) = 0.0
     wombat%fescaven(:,:,:) = 0.0
     wombat%fescadet(:,:,:) = 0.0
@@ -2320,24 +2328,24 @@ module generic_WOMBATlite
 
       ! Estimate total colloidal iron
       ! ... for now, we assume that 50% of all dFe is colloidal
-      fe_col = 0.5 * biofer 
+      wombat%fecol(i,j,k) = 0.5 * biofer 
 
       ! Determine equilibriuim fractionation of the remain dFe (non-colloidal fraction) into Fe' and L-Fe
       fe_keq = 10**( 17.27 - 1565.7 / ztemk ) * 1e-9 ! Temperature reduces solubility
       fe_par = 4.77e-7 * wombat%radbio3d(i,j,k) * 0.5 / 10**(-6.3) ! Light increases solubility
-      fe_sfe = max(0.0, biofer - fe_col)
+      fe_sfe = max(0.0, biofer - wombat%fecol(i,j,k))
       fe_tfe = (1.0 + fe_par) * fe_sfe
-      fe_III = ( -( 1. + wombat%ligand * fe_keq + fe_par - fe_sfe * fe_keq ) &
-                 + SQRT( ( 1. + wombat%ligand * fe_keq + fe_par - fe_sfe * fe_keq )**2 &
-                         + 4. * fe_tfe * fe_keq) ) / ( 2. * fe_keq + epsi )
-      fe_lig = max(0.0, fe_sfe - fe_III)
+      wombat%feIII(i,j,k) = ( -( 1. + wombat%ligand * fe_keq + fe_par - fe_sfe * fe_keq ) &
+                             + SQRT( ( 1. + wombat%ligand * fe_keq + fe_par - fe_sfe * fe_keq )**2 &
+                                      + 4. * fe_tfe * fe_keq) ) / ( 2. * fe_keq + epsi )
+      wombat%felig(i,j,k) = max(0.0, fe_sfe - wombat%feIII(i,j,k))
 
       ! Precipitation of Fe' (creation of nanoparticles)
-      wombat%feprecip(i,j,k) = max(0.0, ( fe_III - fe3sol ) ) * wombat%knano_dfe/86400.0
+      wombat%feprecip(i,j,k) = max(0.0, ( wombat%feIII(i,j,k) - fe3sol ) ) * wombat%knano_dfe/86400.0
 
       ! Scavenging of Fe` onto biogenic particles 
       partic = (biodet + biocaco3)
-      wombat%fescaven(i,j,k) = fe_III * (3e-5 + wombat%kscav_dfe * partic) / 86400.0
+      wombat%fescaven(i,j,k) = wombat%feIII(i,j,k) * (3e-5 + wombat%kscav_dfe * partic) / 86400.0
       wombat%fescadet(i,j,k) = wombat%fescaven(i,j,k) * biodet / (partic+epsi) 
 
       ! Coagulation of colloidal Fe (umol/m3) to form sinking particles (mmol/m3)
@@ -2349,7 +2357,7 @@ module generic_WOMBATlite
       else
         zval = ( 0.01*(12.*biof*biodoc + 9.*biodet) + 2.5*biodet + 128.*biof*biodoc + 725.*biodet )*1e-8
       endif
-      wombat%fecoag2det(i,j,k) = fe_col * zval / 86400.0
+      wombat%fecoag2det(i,j,k) = wombat%fecol(i,j,k) * zval / 86400.0
 
       ! Convert the sink terms to mol/kg
       wombat%feprecip(i,j,k) = wombat%feprecip(i,j,k) * umol_m3_to_mol_kg
@@ -2754,6 +2762,18 @@ module generic_WOMBATlite
 
     if (wombat%id_phy_dfeupt .gt. 0) &
       used = g_send_data(wombat%id_phy_dfeupt, wombat%phy_dfeupt, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_feIII .gt. 0) &
+      used = g_send_data(wombat%id_feIII, wombat%feIII, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_felig .gt. 0) &
+      used = g_send_data(wombat%id_felig, wombat%felig, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_fecol .gt. 0) &
+      used = g_send_data(wombat%id_fecol, wombat%fecol, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_feprecip .gt. 0) &
@@ -3293,6 +3313,9 @@ module generic_WOMBATlite
     allocate(wombat%phy_lnit(isd:ied, jsd:jed, 1:nk)); wombat%phy_lnit(:,:,:)=0.0
     allocate(wombat%phy_lfer(isd:ied, jsd:jed, 1:nk)); wombat%phy_lfer(:,:,:)=0.0
     allocate(wombat%phy_dfeupt(isd:ied, jsd:jed, 1:nk)); wombat%phy_dfeupt(:,:,:)=0.0
+    allocate(wombat%feIII(isd:ied, jsd:jed, 1:nk)); wombat%feIII(:,:,:)=0.0
+    allocate(wombat%felig(isd:ied, jsd:jed, 1:nk)); wombat%felig(:,:,:)=0.0
+    allocate(wombat%fecol(isd:ied, jsd:jed, 1:nk)); wombat%fecol(:,:,:)=0.0
     allocate(wombat%feprecip(isd:ied, jsd:jed, 1:nk)); wombat%feprecip(:,:,:)=0.0
     allocate(wombat%fescaven(isd:ied, jsd:jed, 1:nk)); wombat%fescaven(:,:,:)=0.0
     allocate(wombat%fescadet(isd:ied, jsd:jed, 1:nk)); wombat%fescadet(:,:,:)=0.0
@@ -3420,6 +3443,9 @@ module generic_WOMBATlite
         wombat%phy_lnit, &
         wombat%phy_lfer, &
         wombat%phy_dfeupt, &
+        wombat%feIII, &
+        wombat%felig, &
+        wombat%fecol, &
         wombat%feprecip, &
         wombat%fescaven, &
         wombat%fescadet, &
