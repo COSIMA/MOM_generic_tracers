@@ -758,17 +758,17 @@ module generic_WOMBATlite
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'feIII', 'IIIitation of free Fe onto nanoparticles', 'h', 'L', 's', 'mol/kg', 'f')
+        'feIII', 'free iron (Fe3+)', 'h', 'L', 's', 'mol/kg', 'f')
     wombat%id_feIII = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'felig', 'IIIitation of free Fe onto nanoparticles', 'h', 'L', 's', 'mol/kg', 'f')
+        'felig', 'ligand-bound dissolved iron', 'h', 'L', 's', 'mol/kg', 'f')
     wombat%id_felig = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'fecol', 'IIIitation of free Fe onto nanoparticles', 'h', 'L', 's', 'mol/kg', 'f')
+        'fecol', 'Colloidal dissolved iron', 'h', 'L', 's', 'mol/kg', 'f')
     wombat%id_fecol = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
