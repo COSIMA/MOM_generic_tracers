@@ -3181,8 +3181,10 @@ contains
           nz=g_tracer_com%grid_kmt(i,j)
 
           if (g_tracer%move_vertical) then
-	    do k=2,nz; sink_dist(k) = (dt*g_tracer%vmove(i,j,k)) * m_to_H; enddo
-	  endif
+            do k=2,nz; sink_dist(k) = (dt*g_tracer%vmove(i,j,k)) * m_to_H; enddo
+            sink_dist(nz+1) = (dt*g_tracer%vmove(i,j,nz)) * m_to_H !PJB [13th Nov 2024] to allow sinking into bottom reservoir
+            ! PJB... although this doesn't work because "move_vertical==.true." makes "GOLDtridiag==.false."
+          endif
           sfc_src = 0.0 ; btm_src = 0.0 
 
           ! Find the sinking rates at all interfaces, limiting them if necesary
@@ -3316,8 +3318,8 @@ contains
     GOLDtridiag = .true.
     IOWtridiag  = .false.
     if (g_tracer%move_vertical) then
-       GOLDtridiag = .false.
-       IOWtridiag  = .true.
+      GOLDtridiag = .false.
+      IOWtridiag  = .true.
     endif
     
     eps = 1.e-30
@@ -3415,34 +3417,41 @@ contains
              kp1   = min(k+1,g_tracer_com%nk)
              do i=g_tracer_com%isc,g_tracer_com%iec
                 fact1  = dt/dh(i,j,k)
-		fact2  = rho0*fact1*0.5
-		factu  = fact1/dhw(i,j,km1)
+                fact2  = rho0*fact1*0.5
+                factu  = fact1/dhw(i,j,km1)
                 factl  = fact1/dhw(i,j,k)
-		wabsu       = abs(g_tracer%vmove(i,j,km1))
-		wposu(i,k)  = fact2*(g_tracer%vmove(i,j,km1) + wabsu)*g_tracer_com%grid_tmask(i,j,k)
-		wnegu(i,k)  = fact2*(g_tracer%vmove(i,j,km1) - wabsu)*g_tracer_com%grid_tmask(i,j,k)
-		wabsl       = abs(g_tracer%vmove(i,j,k))
-		wposl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) + wabsl)*g_tracer_com%grid_tmask(i,j,kp1)
-		wnegl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) - wabsl)*g_tracer_com%grid_tmask(i,j,kp1)
-                a1(i,k) = dcb(i,j,km1)*factu*g_tracer_com%grid_tmask(i,j,k)  
-                c1(i,k) = dcb(i,j,k)  *factl*g_tracer_com%grid_tmask(i,j,kp1)
-                a(i,k) = -(a1(i,k) - wnegu(i,k))
-                c(i,k) = -(c1(i,k) + wposl(i,k))
+                wabsu       = abs(g_tracer%vmove(i,j,km1))
+                wposu(i,k)  = fact2*(g_tracer%vmove(i,j,km1) + wabsu)*g_tracer_com%grid_tmask(i,j,k)
+                wnegu(i,k)  = fact2*(g_tracer%vmove(i,j,km1) - wabsu)*g_tracer_com%grid_tmask(i,j,k)
+                wabsl       = abs(g_tracer%vmove(i,j,k))
+                wposl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) + wabsl)*g_tracer_com%grid_tmask(i,j,kp1)
+                wnegl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) - wabsl)*g_tracer_com%grid_tmask(i,j,kp1)
+                if (k.eq.g_tracer_com%grid_kmt(i,j) .and. _ALLOCATED(g_tracer%btm_reservoir)) then  ! PJB [14th Nov 2024]
+                  wnegl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) - wabsl)*g_tracer_com%grid_tmask(i,j,k)
+                  g_tracer%btm_reservoir(i,j) = g_tracer%btm_reservoir(i,j) - &
+                                                wnegl(i,k)*g_tracer%field(i,j,k,tau)*dh(i,j,k)
+                endif
+                a1(i,k) = dcb(i,j,km1)*factu*g_tracer_com%grid_tmask(i,j,k) 
+                c1(i,k) = dcb(i,j,k)  *factl*g_tracer_com%grid_tmask(i,j,kp1) 
+                a(i,k) = -(a1(i,k) - wnegu(i,k))  ! lower diagonal coefs
+                c(i,k) = -(c1(i,k) + wposl(i,k))  ! upper diagonal coefs
                 f(i,k) = g_tracer%field(i,j,k,tau)*g_tracer_com%grid_tmask(i,j,k) 
-                b(i,k) = 1.0 + a1(i,k) + c1(i,k) - wnegl(i,k) + wposu(i,k)
+                b(i,k) = 1.0 + a1(i,k) + c1(i,k) - wnegl(i,k) + wposu(i,k)  ! main diagonal
              enddo
           enddo
 
+          ! Set boundary conditions (zero flow out the top and bottom of the water column)
           do i=g_tracer_com%isc,g_tracer_com%iec
              a1(i,1)  = 0.0
-	     wnegu(i,1) = 0.0; wposu(i,1) = 0.0
-	     a(i,1)  = 0.0
+             wnegu(i,1) = 0.0; wposu(i,1) = 0.0
+             a(i,1)  = 0.0
              c1(i,g_tracer_com%nk) = 0.0
-	     wposl(i,g_tracer_com%nk) = 0.0; wnegl(i,g_tracer_com%nk) = 0.0 
+             wposl(i,g_tracer_com%nk) = 0.0
+             if (.not. _ALLOCATED(g_tracer%btm_reservoir)) wnegl(i,g_tracer_com%nk) = 0.0  !PJB [14th Nov 2024]
              c(i,g_tracer_com%nk) = 0.0
              b(i,1)  = 1.0 + a1(i,1) + c1(i,1) - wnegl(i,1) + wposu(i,1)
              b(i,g_tracer_com%nk) = 1.0 + a1(i,g_tracer_com%nk) + c1(i,g_tracer_com%nk) &
-	                                - wnegl(i,g_tracer_com%nk) + wposu(i,g_tracer_com%nk)
+                                    - wnegl(i,g_tracer_com%nk) + wposu(i,g_tracer_com%nk)
 
              ! top and bottom b.c.
              if (_ALLOCATED(g_tracer%stf)) &
