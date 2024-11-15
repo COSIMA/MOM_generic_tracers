@@ -140,7 +140,8 @@ module generic_WOMBATlite
         zooassi, &
         zookz, &
         zoogmax, &
-        zooepsi, &
+        zooepsmin, &
+        zooepsmax, &
         zprefphy, &
         zprefdet, &
         zoolmor, &
@@ -258,12 +259,14 @@ module generic_WOMBATlite
         f_fe, &
         pprod_gross, &
         zprod_gross, &
-        radbio3d, &
-        radmid3d, &
+        radbio, &
+        radmid, &
+        radmld, &
         npp3d, &
         phy_mumax, &
         phy_mu, &
         pchl_mu, &
+        pchl_lpar, &
         phy_kni, &
         phy_kfe, &
         phy_lpar, &
@@ -333,13 +336,15 @@ module generic_WOMBATlite
         id_adic_vstf = -1, &
         id_alk_vstf = -1, &
         id_light_limit = -1, &
-        id_radbio3d = -1, &
-        id_radmid3d = -1, &
+        id_radbio = -1, &
+        id_radmid = -1, &
+        id_radmld = -1, &
         id_radbio1 = -1, &
         id_pprod_gross = -1, &
         id_phy_kni = -1, &
         id_phy_kfe = -1, &
         id_phy_lpar = -1, &
+        id_pchl_lpar = -1, &
         id_phy_lnit = -1, &
         id_phy_lfer = -1, &
         id_phy_dfeupt = -1, &
@@ -653,15 +658,21 @@ module generic_WOMBATlite
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
     
     vardesc_temp = vardesc( &
-        'radbio3d', 'Photosynthetically active radiation available for phytoplankton growth', &
+        'radbio', 'Photosynthetically active radiation available for phytoplankton growth', &
         'h', 'L', 's', 'W m-2', 'f')
-    wombat%id_radbio3d = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+    wombat%id_radbio = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
     
     vardesc_temp = vardesc( &
-        'radmid3d', 'Photosynthetically active radiation at centre point of grid cell', &
+        'radmid', 'Photosynthetically active radiation at centre point of grid cell', &
         'h', 'L', 's', 'W m-2', 'f')
-    wombat%id_radmid3d = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+    wombat%id_radmid = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+    
+    vardesc_temp = vardesc( &
+        'radmld', 'Photosynthetically active radiation averaged in mixed layer', &
+        'h', 'L', 's', 'W m-2', 'f')
+    wombat%id_radmld = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
     
     vardesc_temp = vardesc( &
@@ -757,6 +768,11 @@ module generic_WOMBATlite
     vardesc_temp = vardesc( &
         'pchl_mu', 'Realised growth rate of phytoplankton chlorophyll', 'h', 'L', 's', 'mol/kg/s', 'f')
     wombat%id_pchl_mu = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'pchl_lpar', 'Limitation of chlorophyll production by light', 'h', 'L', 's', '[0-1]', 'f')
+    wombat%id_pchl_lpar = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
@@ -1151,7 +1167,7 @@ module generic_WOMBATlite
 
     ! Initial slope of P-I curve [(mg Chl m-3)-1 (W m-2)-1]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('alphabio', wombat%alphabio, 2.25)
+    call g_tracer_add_param('alphabio', wombat%alphabio, 2.5)
 
     ! Autotrophy maximum growth rate parameter a [1/s]
     !-----------------------------------------------------------------------
@@ -1209,9 +1225,13 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     call g_tracer_add_param('zoogmax', wombat%zoogmax, 3.0/86400.0)
 
-    ! Zooplankton prey capture rate constant [m6/mmol2/s]
+    ! Zooplankton minimum prey capture rate constant [m6/mmol2/s]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zooepsi', wombat%zooepsi, 0.25/86400.0)
+    call g_tracer_add_param('zooepsmin', wombat%zooepsmin, 0.025/86400.0)
+
+    ! Zooplankton maximum prey capture rate constant [m6/mmol2/s]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('zooepsmax', wombat%zooepsmax, 0.5/86400.0)
 
     ! Zooplankton preference for phytoplankton [0-1]
     !-----------------------------------------------------------------------
@@ -1282,7 +1302,7 @@ module generic_WOMBATlite
 
     ! Scavenging of Fe` onto biogenic particles [(mmolC/m3)-1 d-1]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('kscav_dfe', wombat%kscav_dfe, 5e-6)
+    call g_tracer_add_param('kscav_dfe', wombat%kscav_dfe, 0.005)
 
     ! Iron background concentration [umol Fe m^-3]
     !-----------------------------------------------------------------------
@@ -1310,7 +1330,8 @@ module generic_WOMBATlite
 
     ! Global average surface no3 used for virtual flux correction [mol/kg]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('no3_global', wombat%no3_global, 4.512e-06)
+    !call g_tracer_add_param('no3_global', wombat%no3_global, 4.512e-06)
+    call g_tracer_add_param('no3_global', wombat%no3_global, 0.0)
 
     call g_tracer_end_param_list(package_name)
 
@@ -1807,17 +1828,15 @@ module generic_WOMBATlite
     real                                    :: par_phy_mldsum, par_z_mldsum
     real                                    :: chl, zchl, zval, phy_chlc
     real                                    :: phy_pisl, phy_pisl2 
-    real                                    :: pchl_pisl, pchl_lpar, pchl_mumin, pchl_muopt
+    real                                    :: pchl_pisl, pchl_mumin, pchl_muopt
     real, dimension(:,:), allocatable       :: ek_bgr, par_bgr_mid, par_bgr_top
-    real, dimension(:), allocatable         :: par_mid
-    real, dimension(:,:,:), allocatable     :: par_phy, par_phymld
     real, dimension(4,61)                   :: zbgr
     real                                    :: ztemk, fe_keq, fe_par, fe_sfe, fe_tfe, partic
     real                                    :: fesol1, fesol2, fesol3, fesol4, fesol5, hp, fe3sol
     real                                    :: biof, biodoc
     real                                    :: phy_Fe2C, zoo_Fe2C, det_Fe2C
     real                                    :: phy_minqfe, phy_maxqfe
-    real                                    :: zoo_slmor
+    real                                    :: zooeps, zoo_slmor
     logical                                 :: used
 
     call g_tracer_get_common(isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, &
@@ -1999,8 +2018,9 @@ module generic_WOMBATlite
     wombat%pprod_gross(:,:,:) = 0.0
     wombat%zprod_gross(:,:,:) = 0.0
     wombat%light_limit(:,:) = 0.0
-    wombat%radbio3d(:,:,:) = 0.0
-    wombat%radmid3d(:,:,:) = 0.0
+    wombat%radbio(:,:,:) = 0.0
+    wombat%radmid(:,:,:) = 0.0
+    wombat%radmld(:,:,:) = 0.0
     wombat%npp3d(:,:,:) = 0.0
     wombat%phy_mumax(:,:,:) = 0.0
     wombat%phy_mu(:,:,:) = 0.0
@@ -2008,6 +2028,7 @@ module generic_WOMBATlite
     wombat%phy_kni(:,:,:) = 0.0
     wombat%phy_kfe(:,:,:) = 0.0
     wombat%phy_lpar(:,:,:) = 0.0
+    wombat%pchl_lpar(:,:,:) = 0.0
     wombat%phy_lnit(:,:,:) = 0.0
     wombat%phy_lfer(:,:,:) = 0.0
     wombat%phy_dfeupt(:,:,:) = 0.0
@@ -2069,9 +2090,6 @@ module generic_WOMBATlite
     allocate(ek_bgr(nk,3)); ek_bgr(:,:)=0.0
     allocate(par_bgr_mid(nk,3)); par_bgr_mid(:,:)=0.0
     allocate(par_bgr_top(nk,3)); par_bgr_top(:,:)=0.0
-    allocate(par_mid(nk)); par_mid(:)=0.0
-    allocate(par_phy(isc:iec, jsc:jec, nk)); par_phy(:,:,:)=0.0
-    allocate(par_phymld(isc:iec, jsc:jec, nk)); par_phymld(:,:,:)=0.0
 
     ! Set the maximum index for euphotic depth
     ! dts: in WOMBAT v3, kmeuph and k100 are integers but here they are arrays since zw
@@ -2171,11 +2189,10 @@ module generic_WOMBATlite
      
       par_bgr_top(:,:) = 0.0
       par_bgr_mid(:,:) = 0.0
-      par_mid(:) = 0.0
 
       do k = 1,grid_kmt(i,j)  !{
 
-        ! chlorophyll concentration conversion from mol/kg --> mg/m3
+        ! chlorophyll concentration conversion from mol/kg --> mg/m3 for look-up table
         chl = wombat%f_pchl(i,j,k) * 12.0 / mmol_m3_to_mol_kg 
 
         ! Attenuation coefficients given chlorophyll concentration
@@ -2205,7 +2222,7 @@ module generic_WOMBATlite
         endif
         
         ! Light attenuation at mid point of the cells
-        par_mid(k) = par_bgr_mid(k,1) + par_bgr_mid(k,2) + par_bgr_mid(k,3)
+        wombat%radmid(i,j,k) = par_bgr_mid(k,1) + par_bgr_mid(k,2) + par_bgr_mid(k,3)
 
       enddo !} k
 
@@ -2219,26 +2236,26 @@ module generic_WOMBATlite
 
         if (swpar.gt.0.0) then
           ! Euphotic zone
-          if (par_mid(k).gt.(swpar*0.01) .and. par_mid(k).gt.0.01) then
+          if (wombat%radmid(i,j,k).gt.(swpar*0.01) .and. wombat%radmid(i,j,k).gt.0.01) then
             wombat%zeuphot(i,j) = wombat%zw(i,j,k)
           endif
           ! Light attenuation mean over the grid cells (Eq. 19 of Baird et al., 2020 GMD)
           if (k.lt.grid_kmt(i,j)) then
-            par_phy(i,j,k) = ((par_bgr_top(k,1) - par_bgr_top(k+1,1)) / ek_bgr(k,1)) + &
-                             ((par_bgr_top(k,2) - par_bgr_top(k+1,2)) / ek_bgr(k,2)) + &
-                             ((par_bgr_top(k,3) - par_bgr_top(k+1,3)) / ek_bgr(k,3))
+            wombat%radbio(i,j,k) = ((par_bgr_top(k,1) - par_bgr_top(k+1,1)) / ek_bgr(k,1)) + &
+                                   ((par_bgr_top(k,2) - par_bgr_top(k+1,2)) / ek_bgr(k,2)) + &
+                                   ((par_bgr_top(k,3) - par_bgr_top(k+1,3)) / ek_bgr(k,3))
           else
-            par_phy(i,j,k) = ((par_bgr_top(k,1) - par_bgr_top(k,1)*exp(-ek_bgr(k,1))) / ek_bgr(k,1)) + &
-                             ((par_bgr_top(k,2) - par_bgr_top(k,2)*exp(-ek_bgr(k,2))) / ek_bgr(k,2)) + &
-                             ((par_bgr_top(k,3) - par_bgr_top(k,3)*exp(-ek_bgr(k,3))) / ek_bgr(k,3))
+            wombat%radbio(i,j,k) = ((par_bgr_top(k,1) - par_bgr_top(k,1)*exp(-ek_bgr(k,1))) / ek_bgr(k,1)) + &
+                                   ((par_bgr_top(k,2) - par_bgr_top(k,2)*exp(-ek_bgr(k,2))) / ek_bgr(k,2)) + &
+                                   ((par_bgr_top(k,3) - par_bgr_top(k,3)*exp(-ek_bgr(k,3))) / ek_bgr(k,3))
           endif
         else
-          par_phy(i,j,k) = 0.0
+          wombat%radbio(i,j,k) = 0.0
         endif
 
         ! Integrated light field in the mixed layer
         if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
-          par_phy_mldsum = par_phy_mldsum + par_phy(i,j,k) * dzt(i,j,k)
+          par_phy_mldsum = par_phy_mldsum + wombat%radbio(i,j,k) * dzt(i,j,k)
           par_z_mldsum = par_z_mldsum + dzt(i,j,k)
         endif
 
@@ -2254,14 +2271,10 @@ module generic_WOMBATlite
         ! Calculate average light level in the mixed layer
         if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
           zval = 1.0/(par_z_mldsum + epsi)
-          par_phymld(i,j,k) = par_phy_mldsum * zval
+          wombat%radmld(i,j,k) = par_phy_mldsum * zval
         else
-          par_phymld(i,j,k) = par_phy(i,j,k)
+          wombat%radmld(i,j,k) = wombat%radbio(i,j,k)
         endif
-
-        ! Save total PAR to radbio and radmid arrays for diagnostic output
-        wombat%radbio3d(i,j,k) = par_phy(i,j,k)
-        wombat%radmid3d(i,j,k) = par_mid(k)
 
         ! Temperature-dependent maximum growth rate (Eppley curve)
         wombat%phy_mumax(i,j,k) = wombat%abioa * wombat%bbioa ** (Temp(i,j,k)) ! [1/s]
@@ -2359,7 +2372,7 @@ module generic_WOMBATlite
 
       phy_pisl  = max(wombat%alphabio * phy_chlc, wombat%alphabio * wombat%phyminqc)
       phy_pisl2 = phy_pisl / ( (1. + wombat%phylmor*86400.0 * fbc) ) ! add daylength estimate here
-      wombat%phy_lpar(i,j,k) = (1. - exp(-phy_pisl2 * par_phy(i,j,k))) * wombat%phy_leup(i,j)
+      wombat%phy_lpar(i,j,k) = (1. - exp(-phy_pisl2 * wombat%radbio(i,j,k))) * wombat%phy_leup(i,j)
       wombat%phy_mu(i,j,k) = wombat%phy_mumax(i,j,k) * wombat%phy_lpar(i,j,k) * & 
                              min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))
 
@@ -2385,14 +2398,14 @@ module generic_WOMBATlite
      
       pchl_pisl = phy_pisl / ( wombat%phy_mumax(i,j,k) * 86400.0 * & 
                   (1. - min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))) + epsi )
-      pchl_lpar = (1. - exp(-pchl_pisl * par_phymld(i,j,k))) * wombat%phy_leup(i,j)
+      wombat%pchl_lpar(i,j,k) = (1. - exp(-pchl_pisl * wombat%radmld(i,j,k))) * wombat%phy_leup(i,j)
       pchl_mumin = wombat%phyminqc * wombat%phy_mu(i,j,k) * biophy * 12.0   ![mg/m3/s] 
       pchl_muopt = wombat%phyoptqc * wombat%phy_mu(i,j,k) * biophy * 12.0   ![mg/m3/s]
-      wombat%pchl_mu(i,j,k) = (pchl_muopt - pchl_mumin) * pchl_lpar * &
-                min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))
-      if ( (phy_pisl * par_phymld(i,j,k)) .gt. 0.0 ) then
+      wombat%pchl_mu(i,j,k) = (pchl_muopt - pchl_mumin) * wombat%pchl_lpar(i,j,k) * &
+                               min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))
+      if ( (phy_pisl * wombat%radmld(i,j,k)) .gt. 0.0 ) then
         wombat%pchl_mu(i,j,k) = pchl_mumin + wombat%pchl_mu(i,j,k) / &
-                                (phy_pisl * par_phymld(i,j,k))
+                                (phy_pisl * wombat%radmld(i,j,k))
       endif
       wombat%pchl_mu(i,j,k) = wombat%pchl_mu(i,j,k) / 12.0 * mmol_m3_to_mol_kg  ![mol/kg/s]
 
@@ -2407,17 +2420,18 @@ module generic_WOMBATlite
 
       ! 1. Maximum iron content of phytoplankton cell
       ! 2. Ensure that dFe uptake increases or decreases in response to cell quota
-      ! 3. Iron uptake of phytoplankton
+      ! 3. Iron uptake of phytoplankton (slowed to 20% at night and when N is limiting)
 
       phy_maxqfe = biophy * wombat%phymaxqf  !mmol Fe / m3
       wombat%phy_feupreg(i,j,k) = (4.0 - 4.5 * wombat%phy_lfer(i,j,k) / &
                                   (wombat%phy_lfer(i,j,k) + 0.5) )
       wombat%phy_fedoreg(i,j,k) = max(0.0, (1.0 - biophyfe/phy_maxqfe) / &
                                   abs(1.05 - biophyfe/phy_maxqfe) )
-      wombat%phy_dfeupt(i,j,k) = (biophy * wombat%phy_mumax(i,j,k) * wombat%phymaxqf * &
+      wombat%phy_dfeupt(i,j,k) = (wombat%phy_mumax(i,j,k) * wombat%phymaxqf * &
+                                  max(0.2, wombat%phy_lpar(i,j,k) * wombat%phy_lnit(i,j,k)) * &
                                   biofer / (biofer + wombat%phy_kfe(i,j,k)) * &
                                   wombat%phy_feupreg(i,j,k) * &
-                                  wombat%phy_fedoreg(i,j,k)) * mmol_m3_to_mol_kg
+                                  wombat%phy_fedoreg(i,j,k) * biophy) * mmol_m3_to_mol_kg
 
 
       !-----------------------------------------------------------------------!
@@ -2447,7 +2461,7 @@ module generic_WOMBATlite
 
       ! Determine equilibriuim fractionation of the remain dFe (non-colloidal fraction) into Fe' and L-Fe
       fe_keq = 10**( 17.27 - 1565.7 / ztemk ) * 1e-9 ! Temperature reduces solubility
-      fe_par = 4.77e-7 * wombat%radbio3d(i,j,k) * 0.5 / 10**(-6.3) ! Light increases solubility
+      fe_par = 4.77e-7 * wombat%radbio(i,j,k) * 0.5 / 10**(-6.3) ! Light increases solubility
       fe_sfe = max(0.0, biofer - wombat%fecol(i,j,k))
       fe_tfe = (1.0 + fe_par) * fe_sfe
       wombat%feIII(i,j,k) = ( -( 1. + wombat%ligand * fe_keq + fe_par - fe_sfe * fe_keq ) &
@@ -2460,7 +2474,7 @@ module generic_WOMBATlite
 
       ! Scavenging of Fe` onto biogenic particles 
       partic = (biodet + biocaco3)
-      wombat%fescaven(i,j,k) = wombat%feIII(i,j,k) * (3e-8 + wombat%kscav_dfe * partic) / 86400.0
+      wombat%fescaven(i,j,k) = wombat%feIII(i,j,k) * (3e-5 + wombat%kscav_dfe * partic) / 86400.0
       wombat%fescadet(i,j,k) = wombat%fescaven(i,j,k) * biodet / (partic+epsi) 
 
       ! Coagulation of colloidal Fe (umol/m3) to form sinking particles (mmol/m3)
@@ -2475,10 +2489,10 @@ module generic_WOMBATlite
       wombat%fecoag2det(i,j,k) = wombat%fecol(i,j,k) * zval / 86400.0
 
       ! Convert the terms back to mol/kg
-      wombat%feprecip(i,j,k) = wombat%feprecip(i,j,k) * umol_m3_to_mol_kg * 0.0
-      wombat%fescaven(i,j,k) = wombat%fescaven(i,j,k) * umol_m3_to_mol_kg * 0.0
-      wombat%fescadet(i,j,k) = wombat%fescadet(i,j,k) * umol_m3_to_mol_kg * 0.0
-      wombat%fecoag2det(i,j,k) = wombat%fecoag2det(i,j,k) * umol_m3_to_mol_kg * 0.0
+      wombat%feprecip(i,j,k) = wombat%feprecip(i,j,k) * umol_m3_to_mol_kg
+      wombat%fescaven(i,j,k) = wombat%fescaven(i,j,k) * umol_m3_to_mol_kg
+      wombat%fescadet(i,j,k) = wombat%fescadet(i,j,k) * umol_m3_to_mol_kg
+      wombat%fecoag2det(i,j,k) = wombat%fecoag2det(i,j,k) * umol_m3_to_mol_kg
       wombat%feIII(i,j,k) = wombat%feIII(i,j,k) * umol_m3_to_mol_kg
       wombat%felig(i,j,k) = wombat%felig(i,j,k) * umol_m3_to_mol_kg
       wombat%fecol(i,j,k) = wombat%fecol(i,j,k) * umol_m3_to_mol_kg
@@ -2497,8 +2511,10 @@ module generic_WOMBATlite
       
       ! Grazing function ! [1/s]
       zooprey = wombat%zprefphy * biophy + wombat%zprefdet * biodet
-      g_npz = wombat%zoogmax * fbc * (wombat%zooepsi * zooprey*zooprey) / &
-              (wombat%zoogmax * fbc + (wombat%zooepsi * zooprey*zooprey))
+      zooeps = wombat%zooepsmin + (wombat%zooepsmax - wombat%zooepsmin) / &
+                                  (1. + exp(5.*(biophy - 2.*wombat%phybiot)))
+      g_npz = wombat%zoogmax * fbc * (zooeps * zooprey*zooprey) / &
+              (wombat%zoogmax * fbc + (zooeps * zooprey*zooprey))
 
 
       !-----------------------------------------------------------------------!
@@ -2544,8 +2560,9 @@ module generic_WOMBATlite
       endif
       
       if (wombat%f_det(i,j,k) .gt. epsi) then
-        wombat%detremi(i,j,k) = wombat%reminr(i,j,k) * wombat%f_det(i,j,k) ! [molC/kg/s]
-        if (wombat%zw(i,j,k) .ge. 180.0) wombat%detremi(i,j,k) = 0.5 * wombat%detremi(i,j,k) ! reduce decay below 180m
+        wombat%detremi(i,j,k) = wombat%reminr(i,j,k) / mmol_m3_to_mol_kg * &
+                                wombat%f_det(i,j,k) * wombat%f_det(i,j,k) ! [molC/kg/s]
+      !  if (wombat%zw(i,j,k) .ge. 180.0) wombat%detremi(i,j,k) = 0.5 * wombat%detremi(i,j,k) ! reduce decay below 180m
       else
         wombat%detremi(i,j,k) = 0.0
       endif
@@ -2768,7 +2785,7 @@ module generic_WOMBATlite
         wombat%pprod_gross_intmld(i,j) = wombat%pprod_gross_intmld(i,j) + &
             wombat%pprod_gross(i,j,k) * rho_dzt(i,j,k) ! [mol/m2/s]
         wombat%npp_intmld(i,j) = wombat%npp_intmld(i,j) + wombat%npp3d(i,j,k) * rho_dzt(i,j,k) ! [mol/m2/s]
-        wombat%radbio_intmld(i,j) = wombat%radbio_intmld(i,j) + wombat%radbio3d(i,j,k) * dzt(i,j,k) ! [W/m]
+        wombat%radbio_intmld(i,j) = wombat%radbio_intmld(i,j) + wombat%radbio(i,j,k) * dzt(i,j,k) ! [W/m]
       endif
 
       if (wombat%zw(i,j,k) .le. 100) then
@@ -2782,7 +2799,7 @@ module generic_WOMBATlite
         wombat%pprod_gross_int100(i,j) = wombat%pprod_gross_int100(i,j) + &
             wombat%pprod_gross(i,j,k) * rho_dzt(i,j,k) ! [mol/m2/s]
         wombat%npp_int100(i,j) = wombat%npp_int100(i,j) + wombat%npp3d(i,j,k) * rho_dzt(i,j,k) ! [mol/m2/s]
-        wombat%radbio_int100(i,j) = wombat%radbio_int100(i,j) + wombat%radbio3d(i,j,k) * dzt(i,j,k) ! [W/m]
+        wombat%radbio_int100(i,j) = wombat%radbio_int100(i,j) + wombat%radbio(i,j,k) * dzt(i,j,k) ! [W/m]
       endif
     enddo; enddo; enddo
 
@@ -2919,16 +2936,20 @@ module generic_WOMBATlite
       used = g_send_data(wombat%id_light_limit, wombat%light_limit, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
-    if (wombat%id_radbio3d .gt. 0) &
-      used = g_send_data(wombat%id_radbio3d, wombat%radbio3d, model_time, &
+    if (wombat%id_radbio .gt. 0) &
+      used = g_send_data(wombat%id_radbio, wombat%radbio, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
-    if (wombat%id_radmid3d .gt. 0) &
-      used = g_send_data(wombat%id_radmid3d, wombat%radmid3d, model_time, &
+    if (wombat%id_radmid .gt. 0) &
+      used = g_send_data(wombat%id_radmid, wombat%radmid, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_radmld .gt. 0) &
+      used = g_send_data(wombat%id_radmld, wombat%radmld, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_radbio1 .gt. 0) &
-      used = g_send_data(wombat%id_radbio1, wombat%radbio3d(:,:,1), model_time, &
+      used = g_send_data(wombat%id_radbio1, wombat%radbio(:,:,1), model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
     if (wombat%id_pprod_gross .gt. 0) &
@@ -2945,6 +2966,10 @@ module generic_WOMBATlite
 
     if (wombat%id_pchl_mu .gt. 0) &
       used = g_send_data(wombat%id_pchl_mu, wombat%pchl_mu, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_pchl_lpar .gt. 0) &
+      used = g_send_data(wombat%id_pchl_lpar, wombat%pchl_lpar, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_phy_kni .gt. 0) &
@@ -3527,8 +3552,9 @@ module generic_WOMBATlite
     allocate(wombat%b_alk(isd:ied, jsd:jed)); wombat%b_alk(:,:)=0.0
 
     allocate(wombat%light_limit(isd:ied, jsd:jed)); wombat%light_limit(:,:)=0.0
-    allocate(wombat%radbio3d(isd:ied, jsd:jed, 1:nk)); wombat%radbio3d(:,:,:)=0.0
-    allocate(wombat%radmid3d(isd:ied, jsd:jed, 1:nk)); wombat%radmid3d(:,:,:)=0.0
+    allocate(wombat%radbio(isd:ied, jsd:jed, 1:nk)); wombat%radbio(:,:,:)=0.0
+    allocate(wombat%radmid(isd:ied, jsd:jed, 1:nk)); wombat%radmid(:,:,:)=0.0
+    allocate(wombat%radmld(isd:ied, jsd:jed, 1:nk)); wombat%radmld(:,:,:)=0.0
     allocate(wombat%pprod_gross(isd:ied, jsd:jed, 1:nk)); wombat%pprod_gross(:,:,:)=0.0
     allocate(wombat%pprod_gross_2d(isd:ied, jsd:jed)); wombat%pprod_gross_2d(:,:)=0.0
     allocate(wombat%zprod_gross(isd:ied, jsd:jed, 1:nk)); wombat%zprod_gross(:,:,:)=0.0
@@ -3540,6 +3566,7 @@ module generic_WOMBATlite
     allocate(wombat%phy_mumax(isd:ied, jsd:jed, 1:nk)); wombat%phy_mumax(:,:,:)=0.0
     allocate(wombat%phy_mu(isd:ied, jsd:jed, 1:nk)); wombat%phy_mu(:,:,:)=0.0
     allocate(wombat%pchl_mu(isd:ied, jsd:jed, 1:nk)); wombat%pchl_mu(:,:,:)=0.0
+    allocate(wombat%pchl_lpar(isd:ied, jsd:jed, 1:nk)); wombat%pchl_lpar(:,:,:)=0.0
     allocate(wombat%phy_kni(isd:ied, jsd:jed, 1:nk)); wombat%phy_kni(:,:,:)=0.0
     allocate(wombat%phy_kfe(isd:ied, jsd:jed, 1:nk)); wombat%phy_kfe(:,:,:)=0.0
     allocate(wombat%phy_lpar(isd:ied, jsd:jed, 1:nk)); wombat%phy_lpar(:,:,:)=0.0
@@ -3665,8 +3692,9 @@ module generic_WOMBATlite
 
     deallocate( &
         wombat%light_limit, &
-        wombat%radbio3d, &
-        wombat%radmid3d, &
+        wombat%radbio, &
+        wombat%radmid, &
+        wombat%radmld, &
         wombat%pprod_gross, &
         wombat%pprod_gross_2d, &
         wombat%zprod_gross, &
@@ -3678,6 +3706,7 @@ module generic_WOMBATlite
         wombat%phy_mumax, &
         wombat%phy_mu, &
         wombat%pchl_mu, &
+        wombat%pchl_lpar, &
         wombat%phy_kni, &
         wombat%phy_kfe, &
         wombat%phy_lpar, &
