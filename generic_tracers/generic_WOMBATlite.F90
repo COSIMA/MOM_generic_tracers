@@ -239,8 +239,7 @@ module generic_WOMBATlite
         pprod_gross_int100, &
         npp_int100, &
         radbio_int100, &
-        zeuphot, &
-        phy_leup
+        zeuphot
       
     real, dimension(:,:,:), allocatable :: &
         f_dic, &
@@ -410,8 +409,7 @@ module generic_WOMBATlite
         id_detfe_sed_depst = -1, &
         id_caco3_sed_remin = -1, &
         id_caco3_sed_depst = -1, &
-        id_zeuphot = -1, &
-        id_phy_leup = -1
+        id_zeuphot = -1
 
   end type generic_WOMBATlite_type
 
@@ -1059,12 +1057,6 @@ module generic_WOMBATlite
     wombat%id_zeuphot = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
-    vardesc_temp = vardesc( &
-        'phy_leup', 'Limitation factor due to depth of euphotic zone / MLD', &
-        'h', '1', 's', 'm', 'f')
-    wombat%id_phy_leup = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
-        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
-
   end subroutine generic_WOMBATlite_register_diag
 
   !#######################################################################
@@ -1227,11 +1219,11 @@ module generic_WOMBATlite
 
     ! Zooplankton minimum prey capture rate constant [m6/mmol2/s]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zooepsmin', wombat%zooepsmin, 0.025/86400.0)
+    call g_tracer_add_param('zooepsmin', wombat%zooepsmin, 0.01/86400.0)
 
     ! Zooplankton maximum prey capture rate constant [m6/mmol2/s]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zooepsmax', wombat%zooepsmax, 0.5/86400.0)
+    call g_tracer_add_param('zooepsmax', wombat%zooepsmax, 0.1/86400.0)
 
     ! Zooplankton preference for phytoplankton [0-1]
     !-----------------------------------------------------------------------
@@ -1477,7 +1469,6 @@ module generic_WOMBATlite
         longname = 'Detritus', &
         units = 'mol/kg', &
         prog = .true., &
-        sink_rate = wombat%wdetbio*0.0, &
         move_vertical = .true., &
         flux_bottom = .false., &
         btm_reservoir = .true.)
@@ -1489,7 +1480,6 @@ module generic_WOMBATlite
         longname = 'Detrital iron content', &
         units = 'mol/kg', &
         prog = .true., &
-        sink_rate = wombat%wdetbio*0.0, &
         move_vertical = .true., &
         flux_bottom = .false., &
         btm_reservoir = .true.)
@@ -1502,7 +1492,6 @@ module generic_WOMBATlite
         units = 'mol/kg', &
         prog = .true., &
         sink_rate = wombat%wcaco3, &
-        move_vertical = .false., &
         btm_reservoir = .true.)
 
     ! ADIC (Natural + anthropogenic dissolved inorganic carbon)
@@ -2080,7 +2069,6 @@ module generic_WOMBATlite
     wombat%npp_int100(:,:) = 0.0
     wombat%radbio_int100(:,:) = 0.0
     wombat%zeuphot(:,:) = 0.0
-    wombat%phy_leup(:,:) = 1.0
 
     ! Some unit conversion factors
     mmol_m3_to_mol_kg = 1.e-3 / wombat%Rho_0
@@ -2264,10 +2252,6 @@ module generic_WOMBATlite
 
       enddo !}
 
-      ! Calculate impact of euphotic zone depth on phytoplankton and chlorophyll production
-!      wombat%phy_leup(i,j) = MIN(1.0, wombat%zeuphot(i,j)/(hblt_depth(i,j) + epsi))
-       wombat%phy_leup(i,j) = 1.0
-
       !--- Aggregate light in mixed layer and calculate maximum growth rates ---!
       do k = 1,grid_kmt(i,j)  !{
 
@@ -2372,7 +2356,7 @@ module generic_WOMBATlite
 
       phy_pisl  = max(wombat%alphabio * phy_chlc, wombat%alphabio * wombat%phyminqc)
       phy_pisl2 = phy_pisl / ( (1. + wombat%phylmor*86400.0 * fbc) ) ! add daylength estimate here
-      wombat%phy_lpar(i,j,k) = (1. - exp(-phy_pisl2 * wombat%radbio(i,j,k))) * wombat%phy_leup(i,j)
+      wombat%phy_lpar(i,j,k) = (1. - exp(-phy_pisl2 * wombat%radbio(i,j,k)))
       wombat%phy_mu(i,j,k) = wombat%phy_mumax(i,j,k) * wombat%phy_lpar(i,j,k) * & 
                              min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))
 
@@ -2398,7 +2382,7 @@ module generic_WOMBATlite
      
       pchl_pisl = phy_pisl / ( wombat%phy_mumax(i,j,k) * 86400.0 * & 
                   (1. - min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))) + epsi )
-      wombat%pchl_lpar(i,j,k) = (1. - exp(-pchl_pisl * wombat%radmld(i,j,k))) * wombat%phy_leup(i,j)
+      wombat%pchl_lpar(i,j,k) = (1. - exp(-pchl_pisl * wombat%radmld(i,j,k)))
       pchl_mumin = wombat%phyminqc * wombat%phy_mu(i,j,k) * biophy * 12.0   ![mg/m3/s] 
       pchl_muopt = wombat%phyoptqc * wombat%phy_mu(i,j,k) * biophy * 12.0   ![mg/m3/s]
       wombat%pchl_mu(i,j,k) = (pchl_muopt - pchl_mumin) * wombat%pchl_lpar(i,j,k) * &
@@ -2562,9 +2546,6 @@ module generic_WOMBATlite
       if (wombat%f_det(i,j,k) .gt. epsi) then
         wombat%detremi(i,j,k) = wombat%reminr(i,j,k) / mmol_m3_to_mol_kg * &
                                 wombat%f_det(i,j,k) * wombat%f_det(i,j,k) ! [molC/kg/s]
-      !  if (wombat%zw(i,j,k) .ge. 180.0) wombat%detremi(i,j,k) = 0.5 * wombat%detremi(i,j,k) ! reduce decay below 180m
-      !  wombat%detremi(i,j,k) = wombat%reminr(i,j,k) * wombat%f_det(i,j,k) ! [molC/kg/s]
-      !  if (wombat%zw(i,j,k) .ge. 180.0) wombat%detremi(i,j,k) = 0.5 * wombat%detremi(i,j,k) ! reduce decay below 180m
       else
         wombat%detremi(i,j,k) = 0.0
       endif
@@ -2861,8 +2842,8 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     ! Assign spatially variable vertical movement of tracers
     !-----------------------------------------------------------------------
-    call g_tracer_get_pointer(tracer_list, 'det', 'vmove', wombat%p_wdet) ! [mol/kg]
-    call g_tracer_get_pointer(tracer_list, 'detfe', 'vmove', wombat%p_wdetfe) ! [mol/kg]
+    call g_tracer_get_pointer(tracer_list, 'det', 'vmove', wombat%p_wdet) ! [m/s]
+    call g_tracer_get_pointer(tracer_list, 'detfe', 'vmove', wombat%p_wdetfe) ! [m/s]
 
     ! Variable sinking rates of organic detritus (negative for sinking)
     do j = jsc,jec; do i = isc,iec;
@@ -3270,10 +3251,6 @@ module generic_WOMBATlite
       used = g_send_data(wombat%id_zeuphot, wombat%zeuphot, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
-    if (wombat%id_phy_leup .gt. 0) &
-      used = g_send_data(wombat%id_phy_leup, wombat%phy_leup, model_time, &
-          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
-
     deallocate(kmeuph, k100)
 
   end subroutine generic_WOMBATlite_update_from_source
@@ -3659,10 +3636,7 @@ module generic_WOMBATlite
     allocate(wombat%pprod_gross_int100(isd:ied, jsd:jed)); wombat%pprod_gross_int100(:,:)=0.0
     allocate(wombat%npp_int100(isd:ied, jsd:jed)); wombat%npp_int100(:,:)=0.0
     allocate(wombat%radbio_int100(isd:ied, jsd:jed)); wombat%radbio_int100(:,:)=0.0
-
-!    allocate(wombat%yt(isd:ied, jsd:jed)); wombat%yt(:,:)=0.0
     allocate(wombat%zeuphot(isd:ied, jsd:jed)); wombat%zeuphot(:,:)=0.0
-    allocate(wombat%phy_leup(isd:ied, jsd:jed)); wombat%phy_leup(:,:)=0.0
 
   end subroutine user_allocate_arrays
 
@@ -3801,8 +3775,6 @@ module generic_WOMBATlite
         wombat%radbio_int100)
 
     deallocate( &
-!        wombat%yt, &
-        wombat%phy_leup, &
         wombat%zeuphot)
 
   end subroutine user_deallocate_arrays
