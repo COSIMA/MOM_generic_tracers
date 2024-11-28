@@ -54,9 +54,9 @@ endif()
 ################################################################################
 
 find_package(MPI REQUIRED COMPONENTS Fortran)
+find_package(FMS COMPONENTS R8 REQUIRED)
+find_package(NetCDF REQUIRED COMPONENTS Fortran)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(NETCDF REQUIRED IMPORTED_TARGET "netcdf-fortran")
-pkg_check_modules(FMS REQUIRED IMPORTED_TARGET "FMS")
 pkg_check_modules(MOCSY REQUIRED IMPORTED_TARGET "mocsy")
 
 add_library(gtracers STATIC)
@@ -81,12 +81,20 @@ target_sources(gtracers PRIVATE
 )
 
 target_link_libraries(gtracers PUBLIC
-			PkgConfig::FMS
-			PkgConfig::MOCSY
-			PkgConfig::NETCDF)
+			FMS::fms_r8
+			NetCDF::NetCDF_Fortran
+			PkgConfig::MOCSY)
 
-install(TARGETS gtracers)
+install(TARGETS gtracers
+        EXPORT GFDLGTracersTargets)
+
 install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/ TYPE INCLUDE)
+
+install(EXPORT GFDLGTracersTargets
+  FILE GFDLGTracersTargets.cmake
+  NAMESPACE GFDLGTracers::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GFDLGTracers
+)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/gfdl-generic-tracers.pc.in
                ${CMAKE_CURRENT_BINARY_DIR}/gfdl-generic-tracers.pc @ONLY)
