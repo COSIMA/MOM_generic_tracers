@@ -3182,8 +3182,6 @@ contains
 
           if (g_tracer%move_vertical) then
             do k=2,nz; sink_dist(k) = (dt*g_tracer%vmove(i,j,k)) * m_to_H; enddo
-            sink_dist(nz+1) = (dt*g_tracer%vmove(i,j,nz)) * m_to_H !PJB [13th Nov 2024] to allow sinking into bottom reservoir
-            ! PJB... although this doesn't work because "move_vertical==.true." makes "GOLDtridiag==.false."
           endif
           sfc_src = 0.0 ; btm_src = 0.0 
 
@@ -3195,7 +3193,7 @@ contains
              do k=2,nz 
                 sink(k) = sink_dist(k) ; h_minus_dsink(k) = h_old(i,j,k)
              enddo
-             sink(nz+1) = sink_dist(nz+1) 
+             sink(nz+1) = sink_dist(nz) !PJB [13th Nov 2024] to allow sinking into bottom reservoir
           else
              sink(nz+1) = 0.0 
              ! Find the limited sinking distance at the interfaces.
@@ -3317,10 +3315,11 @@ contains
     
     GOLDtridiag = .true.
     IOWtridiag  = .false.
-    if (g_tracer%move_vertical) then
-      GOLDtridiag = .false.
-      IOWtridiag  = .true.
-    endif
+    ! PJB [1st Dec 2024] Commenting out the next 4 lines ensures GOLDtridiag even when move_vertical==.true.
+    !if (g_tracer%move_vertical) then
+    !  GOLDtridiag = .false.
+    !  IOWtridiag  = .true.
+    !endif
     
     eps = 1.e-30
 

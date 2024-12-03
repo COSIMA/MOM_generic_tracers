@@ -167,6 +167,8 @@ module generic_WOMBATlite
         alk_global, &
         no3_global, &
         sio2_surf, &
+        dic_min, &
+        alk_min, &
         htotal_scale_lo, &
         htotal_scale_hi, &
         htotal_in, &
@@ -286,6 +288,7 @@ module generic_WOMBATlite
         phygrow, &
         phyresp, &
         phymort, &
+        zooeps, &
         zoograzphy, &
         zoograzdet, &
         zooresp, &
@@ -299,11 +302,13 @@ module generic_WOMBATlite
         caldiss, &
         no3_prev, &
         caco3_prev, &
+        dic_correct, &
+        adic_correct, &
+        alk_correct, &
         zw, &
         zm
 
     real, dimension(:,:,:,:), pointer :: &
-        p_alk, &
         p_o2
 
     real, dimension(:,:,:), pointer :: &
@@ -334,6 +339,9 @@ module generic_WOMBATlite
         id_dic_vstf = -1, &
         id_adic_vstf = -1, &
         id_alk_vstf = -1, &
+        id_dic_correct = -1, &
+        id_adic_correct = -1, &
+        id_alk_correct = -1, &
         id_light_limit = -1, &
         id_radbio = -1, &
         id_radmid = -1, &
@@ -361,6 +369,7 @@ module generic_WOMBATlite
         id_phygrow = -1, &
         id_phyresp = -1, &
         id_phymort = -1, &
+        id_zooeps = -1, &
         id_zoograzphy = -1, &
         id_zoograzdet = -1, &
         id_zooresp = -1, &
@@ -650,6 +659,21 @@ module generic_WOMBATlite
     ! Tracer and source term diagnostics
     !=======================================================================
     vardesc_temp = vardesc( &
+        'dic_correct', 'Correction to DIC tracer (min limit)',  'h', 'L', 's', 'mol/kg', 'f')
+    wombat%id_dic_correct = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+    
+    vardesc_temp = vardesc( &
+        'adic_correct', 'Correction to aDIC tracer (min limit)',  'h', 'L', 's', 'mol/kg', 'f')
+    wombat%id_adic_correct = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+    
+    vardesc_temp = vardesc( &
+        'alk_correct', 'Correction to Alk tracer (min limit)',  'h', 'L', 's', 'mol/kg', 'f')
+    wombat%id_alk_correct = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+    
+    vardesc_temp = vardesc( &
         'light_limit', 'Integrated light limitation of phytoplankton growth', &
         'h', '1', 's', 'm', 'f')
     wombat%id_light_limit = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
@@ -871,6 +895,11 @@ module generic_WOMBATlite
     vardesc_temp = vardesc( &
         'phymort', 'Mortality of phytoplankton', 'h', 'L', 's', 'molC/kg/s', 'f')
     wombat%id_phymort = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'zooeps', 'Zooplankton prey capture rate coefficient', 'h', 'L', 's', 'm^6/mmolC^2/s', 'f')
+    wombat%id_zooeps = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
@@ -1145,6 +1174,14 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     call g_tracer_add_param('htotal_scale_hi', wombat%htotal_scale_hi, 100.0)
 
+    ! Absolute maximum of dissolved inorganic carbon [mmol/m3]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('dic_min', wombat%dic_min, 1000.0)
+
+    ! Absolute minimum of alkalinity [mmol/m3]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('alk_min', wombat%alk_min, 1000.0)
+
     ! Global average surface concentration of inorganic silicate [mol/kg]
     !-----------------------------------------------------------------------
     call g_tracer_add_param('sio2_surf', wombat%sio2_surf, 35.0e-3 / 1035.0)
@@ -1219,11 +1256,11 @@ module generic_WOMBATlite
 
     ! Zooplankton minimum prey capture rate constant [m6/mmol2/s]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zooepsmin', wombat%zooepsmin, 0.01/86400.0)
+    call g_tracer_add_param('zooepsmin', wombat%zooepsmin, 0.025/86400.0)
 
     ! Zooplankton maximum prey capture rate constant [m6/mmol2/s]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zooepsmax', wombat%zooepsmax, 0.1/86400.0)
+    call g_tracer_add_param('zooepsmax', wombat%zooepsmax, 0.25/86400.0)
 
     ! Zooplankton preference for phytoplankton [0-1]
     !-----------------------------------------------------------------------
@@ -1824,7 +1861,7 @@ module generic_WOMBATlite
     real                                    :: biof, biodoc, zno3, zfermin
     real                                    :: phy_Fe2C, zoo_Fe2C, det_Fe2C
     real                                    :: phy_minqfe, phy_maxqfe
-    real                                    :: zooeps, zoo_slmor
+    real                                    :: zoo_slmor, epsmin
     real, dimension(:,:,:,:), allocatable   :: n_pools, c_pools
     logical                                 :: used
 
@@ -1845,6 +1882,10 @@ module generic_WOMBATlite
       wombat%zm(i,j,k) = wombat%zw(i,j,k-1) + 0.5 * dzt(i,j,k)
     enddo; enddo ; enddo
 
+    ! Some unit conversion factors
+    mmol_m3_to_mol_kg = 1.e-3 / wombat%Rho_0
+    umol_m3_to_mol_kg = 1.e-3 * mmol_m3_to_mol_kg
+   
 
     !=======================================================================
     ! Attenuation coefficients for blue, green and red light
@@ -1944,10 +1985,10 @@ module generic_WOMBATlite
      if (k.eq.1) then !{
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
            Temp(:,:,k), Salt(:,:,k), &
-           wombat%f_dic(:,:,k), &
+           max(wombat%f_dic(:,:,k), wombat%dic_min*mmol_m3_to_mol_kg), &
            wombat%f_no3(:,:,k) / 16., &
            wombat%sio2(:,:), &
-           wombat%f_alk(:,:,k), &
+           max(wombat%f_alk(:,:,k), wombat%alk_min*mmol_m3_to_mol_kg), &
            wombat%htotallo(:,:), wombat%htotalhi(:,:), &
            wombat%htotal(:,:,k), &
            co2_calc=trim(co2_calc), &
@@ -1957,10 +1998,10 @@ module generic_WOMBATlite
  
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
            Temp(:,:,k), Salt(:,:,k), &
-           wombat%f_adic(:,:,k), &
+           max(wombat%f_adic(:,:,k), wombat%dic_min*mmol_m3_to_mol_kg), &
            wombat%f_no3(:,:,k) / 16., &
            wombat%sio2(:,:), &
-           wombat%f_alk(:,:,k), &
+           max(wombat%f_alk(:,:,k), wombat%alk_min*mmol_m3_to_mol_kg), &
            wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
            wombat%ahtotal(:,:,k), &
            co2_calc=trim(co2_calc), &
@@ -1977,10 +2018,10 @@ module generic_WOMBATlite
 
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
            Temp(:,:,k), Salt(:,:,k), &
-           wombat%f_dic(:,:,k), &
+           max(wombat%f_dic(:,:,k), wombat%dic_min*mmol_m3_to_mol_kg), &
            wombat%f_no3(:,:,k) / 16., &
            wombat%sio2(:,:), &
-           wombat%f_alk(:,:,k), &
+           max(wombat%f_alk(:,:,k), wombat%alk_min*mmol_m3_to_mol_kg), &
            wombat%htotallo(:,:), wombat%htotalhi(:,:), &
            wombat%htotal(:,:,k), &
            co2_calc=trim(co2_calc), &
@@ -1988,10 +2029,10 @@ module generic_WOMBATlite
  
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
            Temp(:,:,k), Salt(:,:,k), &
-           wombat%f_adic(:,:,k), &
+           max(wombat%f_adic(:,:,k), wombat%dic_min*mmol_m3_to_mol_kg), &
            wombat%f_no3(:,:,k) / 16., &
            wombat%sio2(:,:), &
-           wombat%f_alk(:,:,k), &
+           max(wombat%f_alk(:,:,k), wombat%alk_min*mmol_m3_to_mol_kg), &
            wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
            wombat%ahtotal(:,:,k), &
            co2_calc=trim(co2_calc), &
@@ -2004,6 +2045,9 @@ module generic_WOMBATlite
     ! Calculate the source terms
     !=======================================================================
 
+    wombat%dic_correct(:,:,:) = 0.0
+    wombat%adic_correct(:,:,:) = 0.0
+    wombat%alk_correct(:,:,:) = 0.0
     wombat%pprod_gross(:,:,:) = 0.0
     wombat%zprod_gross(:,:,:) = 0.0
     wombat%light_limit(:,:) = 0.0
@@ -2035,6 +2079,7 @@ module generic_WOMBATlite
     wombat%phygrow(:,:,:) = 0.0
     wombat%phyresp(:,:,:) = 0.0
     wombat%phymort(:,:,:) = 0.0
+    wombat%zooeps(:,:,:) = 0.0
     wombat%zoograzphy(:,:,:) = 0.0
     wombat%zoograzdet(:,:,:) = 0.0
     wombat%zooresp(:,:,:) = 0.0
@@ -2070,10 +2115,6 @@ module generic_WOMBATlite
     wombat%radbio_int100(:,:) = 0.0
     wombat%zeuphot(:,:) = 0.0
 
-    ! Some unit conversion factors
-    mmol_m3_to_mol_kg = 1.e-3 / wombat%Rho_0
-    umol_m3_to_mol_kg = 1.e-3 * mmol_m3_to_mol_kg
-   
     ! Allocate and initialise some multi-dimensional variables
     allocate(ek_bgr(nk,3)); ek_bgr(:,:)=0.0
     allocate(par_bgr_mid(nk,3)); par_bgr_mid(:,:)=0.0
@@ -2125,7 +2166,13 @@ module generic_WOMBATlite
         positive=.true.) ! [mol/kg]
     call g_tracer_get_values(tracer_list, 'fe', 'field', wombat%f_fe, isd, jsd, ntau=tau, &
         positive=.true.) ! [mol/kg]
-    
+   call g_tracer_get_values(tracer_list, 'dic', 'field', wombat%f_dic, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'adic', 'field', wombat%f_adic, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'alk', 'field', wombat%f_alk, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
+ 
     
     !-----------------------------------------------------------------------!
     !-----------------------------------------------------------------------!
@@ -2284,8 +2331,8 @@ module generic_WOMBATlite
 
     do tn = 1,ts_npzd
 
-      n_pools(:,:,:,2) = n_pools(:,:,:,1)
-      c_pools(:,:,:,2) = c_pools(:,:,:,1)
+      n_pools(:,:,:,1) = n_pools(:,:,:,2)
+      c_pools(:,:,:,1) = c_pools(:,:,:,2)
 
       do k = 1,nk; do j = jsc,jec; do i = isc,iec;
 
@@ -2495,10 +2542,15 @@ module generic_WOMBATlite
       
       ! Grazing function ! [1/s]
       zooprey = wombat%zprefphy * biophy + wombat%zprefdet * biodet
-      zooeps = wombat%zooepsmin + (wombat%zooepsmax - wombat%zooepsmin) / &
-                                  (1. + exp(5.*(biophy - 2.*wombat%phybiot)))
-      g_npz = wombat%zoogmax * fbc * (zooeps * zooprey*zooprey) / &
-              (wombat%zoogmax * fbc + (zooeps * zooprey*zooprey))
+      ! Epsilon (prey capture rate coefficient) is made a function of phytoplankton biomass (Fig 2 of Rohr et al., 2024; GRL)
+      !  - We add a temperature dependence that reduces epsilon in cool temperatures to enforce mesozooplankton at high lats
+      !  - We add a temperature dependence that elevates the minimum epsilon in the tropics
+      epsmin = wombat%zooepsmin * ( 1.5 * tanh(0.2*(Temp(i,j,k)-15.0)) + 2.5 )
+      wombat%zooeps(i,j,k) = epsmin + (wombat%zooepsmax - epsmin) / &
+                                      (1. + exp(3.*(biophy - 2.*wombat%phybiot))) / &
+                                      (1. + exp(-(Temp(i,j,k)-10.0)))
+      g_npz = wombat%zoogmax * fbc * (wombat%zooeps(i,j,k) * zooprey*zooprey) / &
+              (wombat%zoogmax * fbc + (wombat%zooeps(i,j,k) * zooprey*zooprey))
 
 
       !-----------------------------------------------------------------------!
@@ -2544,8 +2596,7 @@ module generic_WOMBATlite
       endif
       
       if (wombat%f_det(i,j,k) .gt. epsi) then
-        wombat%detremi(i,j,k) = wombat%reminr(i,j,k) / mmol_m3_to_mol_kg * &
-                                wombat%f_det(i,j,k) * wombat%f_det(i,j,k) ! [molC/kg/s]
+        wombat%detremi(i,j,k) = wombat%reminr(i,j,k)/(mmol_m3_to_mol_kg*1e3) * wombat%f_det(i,j,k)**1.5 ! [molC/kg/s]
       else
         wombat%detremi(i,j,k) = 0.0
       endif
@@ -2695,6 +2746,20 @@ module generic_WOMBATlite
                                wombat%zoomort(i,j,k) * wombat%f_inorg + &  
                                wombat%caldiss(i,j,k) )
 
+      ! Equation for ALK ! [molC/kg]
+      !-----------------------------------------------------------------------
+      wombat%f_alk(i,j,k) = wombat%f_alk(i,j,k) + dtsb * 16.0/122.0 * ( &
+                              wombat%phygrow(i,j,k) - &
+                              wombat%detremi(i,j,k) - &
+                              wombat%zooresp(i,j,k) - &
+                              wombat%zooexcrphy(i,j,k) - &
+                              wombat%zooexcrdet(i,j,k) - &
+                              wombat%phyresp(i,j,k) ) + dtsb * 2.0 * ( &
+                              wombat%caldiss(i,j,k) - &
+                              wombat%zooslopphy(i,j,k) * wombat%f_inorg - &
+                              wombat%phymort(i,j,k) * wombat%f_inorg - &
+                              wombat%zoomort(i,j,k) * wombat%f_inorg ) 
+
       ! Extra equation for iron ! [molFe/kg]
       !-----------------------------------------------------------------------
       wombat%f_fe(i,j,k) = wombat%f_fe(i,j,k) + dtsb * ( &
@@ -2730,28 +2795,66 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
 
-      n_pools(i,j,k,1) = wombat%f_no3(i,j,k) + (wombat%f_phy(i,j,k) + wombat%f_det(i,j,k) + &
+      n_pools(i,j,k,2) = wombat%f_no3(i,j,k) + (wombat%f_phy(i,j,k) + wombat%f_det(i,j,k) + &
                           wombat%f_zoo(i,j,k)) * 16/122.0
-      c_pools(i,j,k,1) = wombat%f_dic(i,j,k) + wombat%f_phy(i,j,k) + wombat%f_det(i,j,k) + &
+      c_pools(i,j,k,2) = wombat%f_dic(i,j,k) + wombat%f_phy(i,j,k) + wombat%f_det(i,j,k) + &
                          wombat%f_zoo(i,j,k) + wombat%f_caco3(i,j,k)
 
       if (tn.gt.1) then
-        if (abs(n_pools(i,j,k,2) - n_pools(i,j,k,1)).gt.1e-15) then
+        if (abs(n_pools(i,j,k,2) - n_pools(i,j,k,1)).gt.1e-16) then
           print*, "Error: Ecosystem model is not conserving nitrogen"
           print*, "       Longitude index = ", i
           print*, "       Latitude index = ", j
           print*, "       Depth index and value = ", k, wombat%zm(i,j,k)
+          print*, "       Nested timestep number = ", tn
           print*, " "
           print*, "       Biological N budget (molN/kg) at two timesteps ", n_pools(i,j,k,:)
+          print*, " "
+          print*, "        NO3 (molNO3/kg) = ", wombat%f_no3(i,j,k)
+          print*, "        PHY (molN/kg) = ", wombat%f_phy(i,j,k) * 16/122.0
+          print*, "        ZOO (molN/kg) = ", wombat%f_zoo(i,j,k) * 16/122.0
+          print*, "        DET (molN/kg) = ", wombat%f_det(i,j,k) * 16/122.0
+          print*, " "
+          print*, "         phygrow (molC/kg/s) = ", wombat%phygrow(i,j,k)
+          print*, "         detremi (molC/kg/s) = ", wombat%detremi(i,j,k)
+          print*, "         zooresp (molC/kg/s) = ", wombat%zooresp(i,j,k)
+          print*, "         zooexcrphy (molC/kg/s) = ", wombat%zooexcrphy(i,j,k)
+          print*, "         zooexcrdet (molC/kg/s) = ", wombat%zooexcrdet(i,j,k)
+          print*, "         phyresp (molC/kg/s) = ", wombat%phyresp(i,j,k)
+          print*, " "
           stop
         endif
-        if (abs(c_pools(i,j,k,2) - c_pools(i,j,k,1)).gt.1e-15) then
+        if (abs(c_pools(i,j,k,2) - c_pools(i,j,k,1)).gt.1e-16) then
           print*, "Error: Ecosystem model is not conserving carbon"
           print*, "       Longitude index = ", i
           print*, "       Latitude index = ", j
           print*, "       Depth index and value = ", k, wombat%zm(i,j,k)
+          print*, "       Nested timestep number = ", tn
           print*, " "
           print*, "       Biological C budget (molC/kg) at two timesteps ", c_pools(i,j,k,:)
+          print*, " "
+          print*, "        DIC (molC/kg) = ", wombat%f_dic(i,j,k)
+          print*, "        ALK (molC/kg) = ", wombat%f_alk(i,j,k)
+          print*, "        PHY (molC/kg) = ", wombat%f_phy(i,j,k)
+          print*, "        ZOO (molC/kg) = ", wombat%f_zoo(i,j,k)
+          print*, "        DET (molC/kg) = ", wombat%f_det(i,j,k)
+          print*, "        CaCO3 (molC/kg) = ", wombat%f_caco3(i,j,k)
+          print*, "        Temp = ", Temp(i,j,k)
+          print*, "        Salt = ", Salt(i,j,k)
+          print*, "        surface pCO2 = ", wombat%pco2_csurf(i,j)
+          print*, "        htotal = ", wombat%htotal(i,j,k)
+          print*, " "
+          print*, "         phygrow (molC/kg/s) = ", wombat%phygrow(i,j,k)
+          print*, "         detremi (molC/kg/s) = ", wombat%detremi(i,j,k)
+          print*, "         zooresp (molC/kg/s) = ", wombat%zooresp(i,j,k)
+          print*, "         zooexcrphy (molC/kg/s) = ", wombat%zooexcrphy(i,j,k)
+          print*, "         zooexcrdet (molC/kg/s) = ", wombat%zooexcrdet(i,j,k)
+          print*, "         phyresp (molC/kg/s) = ", wombat%phyresp(i,j,k)
+          print*, "         zooslopphy * f_inorg (molC/kg/s) = ", wombat%zooslopphy(i,j,k)*wombat%f_inorg
+          print*, "         phymort * f_inorg (molC/kg/s) = ", wombat%phymort(i,j,k)*wombat%f_inorg
+          print*, "         zoomort * f_inorg (molC/kg/s) = ", wombat%zoomort(i,j,k)*wombat%f_inorg
+          print*, "         caldiss (molC/kg/s) = ", wombat%caldiss(i,j,k)
+          print*, " "
           stop
         endif
       endif
@@ -2762,15 +2865,10 @@ module generic_WOMBATlite
 
     ! Add biotically induced tendency to biotracers
     !-----------------------------------------------------------------------
-    ! dts: update prognostic tracers via pointers
-    call g_tracer_get_pointer(tracer_list, 'alk', 'field', wombat%p_alk) ! [mol/kg]
 
     do k = 1,nk; do j = jsc,jec; do i = isc,iec;
       no3_bgc_change = grid_tmask(i,j,k) * (wombat%f_no3(i,j,k) - wombat%no3_prev(i,j,k)) ! [mol/kg]
       caco3_bgc_change = grid_tmask(i,j,k) * (wombat%f_caco3(i,j,k) - wombat%caco3_prev(i,j,k)) ! [mol/kg]
-
-      wombat%p_alk(i,j,k,tau) = wombat%p_alk(i,j,k,tau) + &
-          (-2.0 * caco3_bgc_change - no3_bgc_change) ! [mol/kg]
 
       wombat%pprod_gross(i,j,k) = rdtts * wombat%pprod_gross(i,j,k) * grid_tmask(i,j,k) ! [mol/kg/s]
       wombat%zprod_gross(i,j,k) = rdtts * wombat%zprod_gross(i,j,k) * grid_tmask(i,j,k) ! [mol/kg/s]
@@ -2807,20 +2905,31 @@ module generic_WOMBATlite
       endif
     enddo; enddo; enddo
 
-    ! Additional operations on dissolved iron concentration 
+    ! Additional operations on tracers
     !-----------------------------------------------------------------------
-    ! mac: bottom dFe fix to 1 nM when the water is <= 200 m deep.  
-    ! pjb: tune minimum dissolved iron concentration to detection limit...
-    !       this is essential for ensuring dFe is replenished in upper ocean
     do j = jsc,jec; do i = isc,iec;
+      ! mac: bottom dFe fix to 1 nM when the water is <= 200 m deep.  
       if (grid_kmt(i,j) .gt. 0) then
         k = grid_kmt(i,j)
         if (wombat%zw(i,j,k) .le. 200) wombat%f_fe(i,j,k)= umol_m3_to_mol_kg * 0.999 ! [mol/kg]
       endif
       do k = 1,nk
+        ! pjb: tune minimum dissolved iron concentration to detection limit...
+        !       this is essential for ensuring dFe is replenished in upper ocean and actually
+        !       looks to be the secret of PISCES ability to replicate dFe limitation in the right places
         zno3 = wombat%f_no3(i,j,k) / mmol_m3_to_mol_kg
         zfermin = min( max( 3e-2 * zno3 * zno3, 5e-3), 7e-2) * umol_m3_to_mol_kg
         wombat%f_fe(i,j,k) = max(zfermin, wombat%f_fe(i,j,k)) * grid_tmask(i,j,k)
+        ! pjb: set upper and lower limits of some tracers and save corrections to output for budgets
+        wombat%alk_correct(i,j,k) = (max(wombat%alk_min * mmol_m3_to_mol_kg, wombat%f_alk(i,j,k) ) &
+                                    - wombat%f_alk(i,j,k) ) * grid_tmask(i,j,k)
+        wombat%dic_correct(i,j,k) = (max(wombat%dic_min * mmol_m3_to_mol_kg, wombat%f_dic(i,j,k) ) &
+                                    - wombat%f_dic(i,j,k) ) * grid_tmask(i,j,k)
+        wombat%adic_correct(i,j,k) = (max(wombat%dic_min * mmol_m3_to_mol_kg, wombat%f_adic(i,j,k) ) &
+                                     - wombat%f_adic(i,j,k) ) * grid_tmask(i,j,k)
+        wombat%f_alk(i,j,k) = wombat%f_alk(i,j,k) + wombat%alk_correct(i,j,k)
+        wombat%f_dic(i,j,k) = wombat%f_dic(i,j,k) + wombat%dic_correct(i,j,k)
+        wombat%f_adic(i,j,k) = wombat%f_adic(i,j,k) + wombat%adic_correct(i,j,k)
     enddo; enddo; enddo
 
     ! Set tracers values
@@ -2837,6 +2946,7 @@ module generic_WOMBATlite
     call g_tracer_set_values(tracer_list, 'fe', 'field', wombat%f_fe, isd, jsd, ntau=tau)
     call g_tracer_set_values(tracer_list, 'dic', 'field', wombat%f_dic, isd, jsd, ntau=tau)
     call g_tracer_set_values(tracer_list, 'adic', 'field', wombat%f_adic, isd, jsd, ntau=tau)
+    call g_tracer_set_values(tracer_list, 'alk', 'field', wombat%f_alk, isd, jsd, ntau=tau)
 
 
     !-----------------------------------------------------------------------
@@ -2845,17 +2955,18 @@ module generic_WOMBATlite
     call g_tracer_get_pointer(tracer_list, 'det', 'vmove', wombat%p_wdet) ! [m/s]
     call g_tracer_get_pointer(tracer_list, 'detfe', 'vmove', wombat%p_wdetfe) ! [m/s]
 
-    ! Variable sinking rates of organic detritus (negative for sinking)
+    ! Variable sinking rates of organic detritus (positive for sinking when GOLDtridiag == .true.)
+    !                                            (negative for sinking when IOWtridiag ==.true.)
     do j = jsc,jec; do i = isc,iec;
       if (grid_kmt(i,j).gt.0) then
         biophy1  = max(epsi, wombat%f_phy(i,j,1) ) / mmol_m3_to_mol_kg  ![mmol/m3]
-        wombat%p_wdet(i,j,:) = -wombat%wdetbio * max(0.01, biophy1 - wombat%phybiot)**(0.21)
-        wombat%p_wdetfe(i,j,:) = -wombat%wdetbio * max(0.01, biophy1 - wombat%phybiot)**(0.21)
-        do k=1,nk 
-          wombat%p_wdet(i,j,k) = wombat%p_wdet(i,j,k) + min(0.0, &
-                                 wombat%zw(i,j,k)/5000.0 * (-wombat%wdetmax - wombat%p_wdet(i,j,k)))
-          wombat%p_wdetfe(i,j,k) = wombat%p_wdetfe(i,j,k) + min(0.0, &
-                                   wombat%zw(i,j,k)/5000.0 * (-wombat%wdetmax - wombat%p_wdetfe(i,j,k)))
+        wombat%p_wdet(i,j,:) = wombat%wdetbio * max(0.0, biophy1 - wombat%phybiot)**(0.21)
+        wombat%p_wdetfe(i,j,:) = wombat%wdetbio * max(0.0, biophy1 - wombat%phybiot)**(0.21)
+        do k=1,nk
+          wombat%p_wdet(i,j,k) = wombat%p_wdet(i,j,k) + max(0.0, &
+                                 wombat%zw(i,j,k)/5000.0 * (wombat%wdetmax - wombat%p_wdet(i,j,k)))
+          wombat%p_wdetfe(i,j,k) = wombat%p_wdetfe(i,j,k) + max(0.0, &
+                                   wombat%zw(i,j,k)/5000.0 * (wombat%wdetmax - wombat%p_wdetfe(i,j,k)))
         enddo
       else
         wombat%p_wdet(i,j,:) = 0.0
@@ -2941,6 +3052,18 @@ module generic_WOMBATlite
     if (wombat%id_alk_vstf .gt. 0) &
       used = g_send_data(wombat%id_alk_vstf, wombat%alk_vstf, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_dic_correct .gt. 0) &
+      used = g_send_data(wombat%id_dic_correct, wombat%dic_correct, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_adic_correct .gt. 0) &
+      used = g_send_data(wombat%id_adic_correct, wombat%adic_correct, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_alk_correct .gt. 0) &
+      used = g_send_data(wombat%id_alk_correct, wombat%alk_correct, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_light_limit .gt. 0) &
       used = g_send_data(wombat%id_light_limit, wombat%light_limit, model_time, &
@@ -3060,6 +3183,10 @@ module generic_WOMBATlite
 
     if (wombat%id_phymort .gt. 0) &
       used = g_send_data(wombat%id_phymort, wombat%phymort, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_zooeps .gt. 0) &
+      used = g_send_data(wombat%id_zooeps, wombat%zooeps, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_zoograzphy .gt. 0) &
@@ -3310,6 +3437,7 @@ module generic_WOMBATlite
     integer                                 :: isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, i, j
     real                                    :: sal, ST, o2_saturation
     real                                    :: tt, tk, ts, ts2, ts3, ts4, ts5
+    real                                    :: mmol_m3_to_mol_kg
     real, dimension(:,:,:), pointer         :: grid_tmask
     character(len=fm_string_len), parameter :: sub_name = 'generic_WOMBATlite_set_boundary_values'
 
@@ -3318,7 +3446,10 @@ module generic_WOMBATlite
         grid_tmask=grid_tmask)
 
     call g_tracer_get_pointer(tracer_list, 'o2', 'field', wombat%p_o2)
-    
+   
+    ! Some unit conversion factors
+    mmol_m3_to_mol_kg = 1.e-3 / wombat%Rho_0
+
     ! nnz: Since the generic_WOMBATlite_update_from_source() subroutine is called by this time
     ! the following if block is not really necessary (since this calculation is already done in
     ! source).
@@ -3351,10 +3482,10 @@ module generic_WOMBATlite
 
       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
           SST(:,:), SSS(:,:), &
-          wombat%f_dic(:,:,1), &
+          max(wombat%f_dic(:,:,1), wombat%dic_min*mmol_m3_to_mol_kg), &
           wombat%f_no3(:,:,1) / 16., &
           wombat%sio2(:,:), &
-          wombat%f_alk(:,:,1), &
+          max(wombat%f_alk(:,:,1), wombat%alk_min*mmol_m3_to_mol_kg), &
           wombat%htotallo(:,:), wombat%htotalhi(:,:), &
           wombat%htotal(:,:,1), &
           co2_calc=trim(co2_calc), &
@@ -3364,10 +3495,10 @@ module generic_WOMBATlite
 
       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
           SST(:,:), SSS(:,:), &
-          wombat%f_adic(:,:,1), &
+          max(wombat%f_adic(:,:,1), wombat%dic_min*mmol_m3_to_mol_kg), &
           wombat%f_no3(:,:,1) / 16., &
           wombat%sio2(:,:), &
-          wombat%f_alk(:,:,1), &
+          max(wombat%f_alk(:,:,1), wombat%alk_min*mmol_m3_to_mol_kg), &
           wombat%ahtotallo(:,:), wombat%ahtotalhi(:,:), &
           wombat%ahtotal(:,:,1), &
           co2_calc=trim(co2_calc), &
@@ -3557,6 +3688,9 @@ module generic_WOMBATlite
     allocate(wombat%b_fe(isd:ied, jsd:jed)); wombat%b_fe(:,:)=0.0
     allocate(wombat%b_alk(isd:ied, jsd:jed)); wombat%b_alk(:,:)=0.0
 
+    allocate(wombat%dic_correct(isd:ied, jsd:jed, 1:nk)); wombat%dic_correct(:,:,:)=0.0
+    allocate(wombat%adic_correct(isd:ied, jsd:jed, 1:nk)); wombat%adic_correct(:,:,:)=0.0
+    allocate(wombat%alk_correct(isd:ied, jsd:jed, 1:nk)); wombat%alk_correct(:,:,:)=0.0
     allocate(wombat%light_limit(isd:ied, jsd:jed)); wombat%light_limit(:,:)=0.0
     allocate(wombat%radbio(isd:ied, jsd:jed, 1:nk)); wombat%radbio(:,:,:)=0.0
     allocate(wombat%radmid(isd:ied, jsd:jed, 1:nk)); wombat%radmid(:,:,:)=0.0
@@ -3593,6 +3727,7 @@ module generic_WOMBATlite
     allocate(wombat%phygrow(isd:ied, jsd:jed, 1:nk)); wombat%phygrow(:,:,:)=0.0
     allocate(wombat%phyresp(isd:ied, jsd:jed, 1:nk)); wombat%phyresp(:,:,:)=0.0
     allocate(wombat%phymort(isd:ied, jsd:jed, 1:nk)); wombat%phymort(:,:,:)=0.0
+    allocate(wombat%zooeps(isd:ied, jsd:jed, 1:nk)); wombat%zooeps(:,:,:)=0.0
     allocate(wombat%zoograzphy(isd:ied, jsd:jed, 1:nk)); wombat%zoograzphy(:,:,:)=0.0
     allocate(wombat%zoograzdet(isd:ied, jsd:jed, 1:nk)); wombat%zoograzdet(:,:,:)=0.0
     allocate(wombat%zooresp(isd:ied, jsd:jed, 1:nk)); wombat%zooresp(:,:,:)=0.0
