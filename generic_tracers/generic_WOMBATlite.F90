@@ -195,7 +195,8 @@ module generic_WOMBATlite
         no3_vstf, dic_vstf, adic_vstf, alk_vstf
 
     real, dimension(:,:,:), allocatable :: &
-        htotal, ahtotal
+        htotal, ahtotal, &
+        omega_ara, omega_cal
 
     !-----------------------------------------------------------------------
     ! Arrays for tracer fields and source terms
@@ -338,6 +339,8 @@ module generic_WOMBATlite
         id_paco2 = -1, &
         id_htotal = -1, &
         id_ahtotal = -1, &
+        id_omega_ara = -1, &
+        id_omega_cal = -1, &
         id_no3_vstf = -1, &
         id_dic_vstf = -1, &
         id_adic_vstf = -1, &
@@ -635,6 +638,16 @@ module generic_WOMBATlite
     vardesc_temp = vardesc( &
         'ahtotal', 'H+ concentration inc. anthropogenic', 'h', 'L', 's', 'mol/kg', 'f')
     wombat%id_ahtotal = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'omega_ara', 'Saturation state of aragonite', 'h', 'L', 's', ' ', 'f')
+    wombat%id_omega_ara = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'omega_cal', 'Saturation state of calcite', 'h', 'L', 's', ' ', 'f')
+    wombat%id_omega_cal = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
@@ -2046,7 +2059,7 @@ module generic_WOMBATlite
            co2_calc=trim(co2_calc), &
            zt=wombat%zw(:,:,k), &
            co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), &
-           pCO2surf=wombat%pco2_csurf(:,:))
+           pCO2surf=wombat%pco2_csurf(:,:), omega_arag=wombat%omega_ara(:,:,k), omega_calc=wombat%omega_cal(:,:,k))
  
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
            Temp(:,:,k), Salt(:,:,k), &
@@ -2077,7 +2090,7 @@ module generic_WOMBATlite
            wombat%htotallo(:,:), wombat%htotalhi(:,:), &
            wombat%htotal(:,:,k), &
            co2_calc=trim(co2_calc), &
-           zt=wombat%zw(:,:,k))
+           zt=wombat%zw(:,:,k), omega_arag=wombat%omega_ara(:,:,k), omega_calc=wombat%omega_cal(:,:,k))
  
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
            Temp(:,:,k), Salt(:,:,k), &
@@ -2246,9 +2259,10 @@ module generic_WOMBATlite
     !    6.  Phytoplankton uptake of iron                                   !
     !    7.  Iron chemistry                                                 !
     !    8.  Mortality scalings and grazing                                 !
-    !    9.  Sources and sinks                                              !
-    !    10. Tracer tendencies                                              !
-    !    11. Check for conservation by ecosystem component                  !
+    !    9.  CaCO3 calculations                                             !
+    !    10. Sources and sinks                                             !
+    !    11. Tracer tendencies                                              !
+    !    12. Check for conservation by ecosystem component                  !
     !                                                                       !
     !-----------------------------------------------------------------------!
     !-----------------------------------------------------------------------!
@@ -2534,7 +2548,7 @@ module generic_WOMBATlite
       fesol4 = 10**(-0.2965 - 0.7881*zval**0.5 - 4086.0/ztemk)
       fesol5 = 10**(4.4466 - 0.8505*zval**0.5 - 7980.0/ztemk)
       hp = 10**(-7.9)
-      if (wombat%ahtotal(i,j,k).gt.0.0) hp = wombat%ahtotal(i,j,k)
+      if (wombat%htotal(i,j,k).gt.0.0) hp = wombat%htotal(i,j,k)
       fe3sol = fesol1 * ( hp**3 + fesol2 * hp**2 + fesol3 * hp + fesol4 + fesol5 / hp ) *1e9
 
       ! Estimate total colloidal iron
@@ -2608,7 +2622,32 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
-      !  [Step 9] Sources and sinks                                           !
+      !  [Step 9] CaCO3 calculations                                          !
+      !-----------------------------------------------------------------------!
+      !-----------------------------------------------------------------------!
+      !-----------------------------------------------------------------------!
+
+      
+      !! PIC:POC ratio is a function of the substrate:inhibitor ratio, which is the HCO3- to free H+ ions ratio (mol/nmol), 
+      !!  following Lehmann & Bach (2024). We also add a T-dependent function to scale down CaCO3 production in waters colder 
+      !!  than 3 degrees C based off the observation of no E hux growth beneath this (Fielding 2013; L&O)
+      !wombat%pic2poc(i,j,k) = min(0.3, (wombat%f_inorg + 10**(-3.0 + 4.31 * &
+      !                                  wombat%hco3(i,j,k)*1e-3 / (wombat%hfree(i,j,k)*1e9))) * &
+      !                        (0.55 + 0.45 * tanh(Temp(i,j,k) - 4.0))
+
+      !! The dissolution rate is a function of omegas for calcite and aragonite, as well the
+      !!  concentration of POC, following Kwon et al., 2024, Science Advances; Table S1
+      !diss_cal = (0.253 * max(0.0, 1.0 - wombat%omega_cal(i,j,k))**2.2) / 86400.0
+      !diss_ara = (0.090 * max(0.0, 1.0 - wombat%omega_ara(i,j,k))**1.5) / 86400.0
+      !diss_det = (0.250 * biodet * fbc * detlrem(i,j))
+      !wombat%caco3dis(i,j,k) = diss_cal + diss_ara + diss_det
+
+
+
+      !-----------------------------------------------------------------------!
+      !-----------------------------------------------------------------------!
+      !-----------------------------------------------------------------------!
+      !  [Step 10] Sources and sinks                                          !
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
@@ -2664,7 +2703,7 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
-      !  [Step 10] Tracer tendencies                                          !
+      !  [Step 11] Tracer tendencies                                          !
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
@@ -2843,7 +2882,7 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
-      !  [Step 11] Check for conservation of mass by ecosystem component      !
+      !  [Step 12] Check for conservation of mass by ecosystem component      !
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
@@ -3089,6 +3128,14 @@ module generic_WOMBATlite
 
     if (wombat%id_ahtotal .gt. 0) &
       used = g_send_data(wombat%id_ahtotal, wombat%ahtotal, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_omega_ara .gt. 0) &
+      used = g_send_data(wombat%id_omega_ara, wombat%omega_ara, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_omega_cal .gt. 0) &
+      used = g_send_data(wombat%id_omega_cal, wombat%omega_cal, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_no3_vstf .gt. 0) &
@@ -3545,7 +3592,7 @@ module generic_WOMBATlite
           co2_calc=trim(co2_calc), &
           zt=dzt(:,:,1), &
           co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), &
-          pCO2surf=wombat%pco2_csurf(:,:))
+          pCO2surf=wombat%pco2_csurf(:,:), omega_arag=wombat%omega_ara(:,:,1), omega_calc=wombat%omega_cal(:,:,1))
 
       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
           SST(:,:), SSS(:,:), &
@@ -3704,6 +3751,8 @@ module generic_WOMBATlite
     allocate(wombat%ahtotallo(isd:ied, jsd:jed)); wombat%ahtotallo(:,:)=0.0
     allocate(wombat%ahtotalhi(isd:ied, jsd:jed)); wombat%ahtotalhi(:,:)=0.0
     allocate(wombat%ahtotal(isd:ied, jsd:jed, 1:nk)); wombat%ahtotal(:,:,:)=wombat%htotal_in
+    allocate(wombat%omega_ara(isd:ied, jsd:jed, 1:nk)); wombat%omega_ara(:,:,:)=1.0
+    allocate(wombat%omega_cal(isd:ied, jsd:jed, 1:nk)); wombat%omega_cal(:,:,:)=1.0
     allocate(wombat%sio2(isd:ied, jsd:jed)); wombat%sio2(:,:)=wombat%sio2_surf
     allocate(wombat%co2_csurf(isd:ied, jsd:jed)); wombat%co2_csurf(:,:)=0.0
     allocate(wombat%co2_alpha(isd:ied, jsd:jed)); wombat%co2_alpha(:,:)=0.0
@@ -3846,6 +3895,8 @@ module generic_WOMBATlite
         wombat%ahtotallo, &
         wombat%ahtotalhi, &
         wombat%ahtotal, &
+        wombat%omega_ara, &
+        wombat%omega_cal, &
         wombat%co2_csurf, &
         wombat%co2_alpha, &
         wombat%co2_sc_no, &
