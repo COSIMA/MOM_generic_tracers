@@ -221,6 +221,9 @@ module generic_WOMBATlite
         det_sed_remin, &
         detfe_sed_remin, &
         caco3_sed_remin, &
+        det_sed_bury, &
+        detfe_sed_bury, &
+        caco3_sed_bury, &
         dic_intmld, &
         adic_intmld, &
         o2_intmld, &
@@ -414,10 +417,13 @@ module generic_WOMBATlite
         id_radbio_int100 = -1, &
         id_det_sed_remin = -1, &
         id_det_sed_depst = -1, &
+        id_det_sed_bury = -1, &
         id_detfe_sed_remin = -1, &
         id_detfe_sed_depst = -1, &
+        id_detfe_sed_bury = -1, &
         id_caco3_sed_remin = -1, &
         id_caco3_sed_depst = -1, &
+        id_caco3_sed_bury = -1, &
         id_zeuphot = -1
 
   end type generic_WOMBATlite_type
@@ -716,6 +722,12 @@ module generic_WOMBATlite
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
+        'det_sed_bury', 'Rate of permanent burial of detrital carbon within sediment', &
+        'h', '1', 's', 'mol/m^2/s', 'f')
+    wombat%id_det_sed_bury = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
         'detfe_sed_remin', 'Rate of remineralisation of detrital iron in accumulated sediment', &
         'h', '1', 's', 'mol/m^2/s', 'f')
     wombat%id_detfe_sed_remin = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
@@ -723,8 +735,14 @@ module generic_WOMBATlite
 
     vardesc_temp = vardesc( &
         'detfe_sed_depst', 'Rate of deposition of detrital iron to sediment at base of water column', &
-        'h', '1', 's', 'mol/m^2/s', 'f')
+        'h', '1', 's', 'molFe/m^2/s', 'f')
     wombat%id_detfe_sed_depst = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'detfe_sed_bury', 'Rate of permanent burial of detrital iron within sediment', &
+        'h', '1', 's', 'mol/m^2/s', 'f')
+    wombat%id_detfe_sed_bury = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
@@ -737,6 +755,12 @@ module generic_WOMBATlite
         'caco3_sed_depst', 'Rate of deposition of CaCO3 to sediment at base of water column', &
         'h', '1', 's', 'mol/m^2/s', 'f')
     wombat%id_caco3_sed_depst = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'caco3_sed_bury', 'Rate of permanent burial of CaCO3 within sediment', &
+        'h', '1', 's', 'molFe/m^2/s', 'f')
+    wombat%id_caco3_sed_bury = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
@@ -1711,8 +1735,9 @@ module generic_WOMBATlite
     integer, intent(in)          :: tau
     type(time_type), intent(in)  :: model_time
 
-    integer                         :: isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau
+    integer                         :: isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, i, j
     real, dimension(:,:,:), pointer :: grid_tmask
+    real                            :: orgflux, burfac
     logical                         :: used
 
     call g_tracer_get_common(isc, iec, jsc, jec, isd, ied, jsd, jed, nk, ntau, &
@@ -1721,16 +1746,31 @@ module generic_WOMBATlite
     ! Move bottom reservoirs to sediment tracers
     !-----------------------------------------------------------------------
     call g_tracer_get_values(tracer_list, 'det', 'btm_reservoir', wombat%det_btm, isd, jsd)
+    call g_tracer_get_values(tracer_list, 'detfe', 'btm_reservoir', wombat%detfe_btm, isd, jsd)
+    call g_tracer_get_values(tracer_list, 'caco3', 'btm_reservoir', wombat%caco3_btm, isd, jsd)
+
+    ! Calculate burial of deposited detritus (Dunne et al., 2007)
+    do i = isc, iec
+      do j = jsc, jec
+        orgflux = wombat%det_btm(i,j) / dt * 86400 * 1e6 * 1e4  ! umol C cm-2 day-1
+        burfac = 0.013 + 0.53 * orgflux**2.0 / (7.0 + orgflux)**2.0 
+        wombat%det_sed_bury(i,j) = wombat%det_btm(i,j) * burfac ! [mol/m2]
+        wombat%detfe_sed_bury(i,j) = wombat%detfe_btm(i,j) * burfac ! [mol/m2]
+        wombat%caco3_sed_bury(i,j) = wombat%caco3_btm(i,j) * burfac ! [mol/m2]
+      enddo
+    enddo
+    wombat%det_btm = wombat%det_btm - wombat%det_sed_bury
+    wombat%detfe_btm = wombat%detfe_btm - wombat%detfe_sed_bury
+    wombat%caco3_btm = wombat%caco3_btm - wombat%caco3_sed_bury
+
     call g_tracer_get_pointer(tracer_list, 'det_sediment', 'field', wombat%p_det_sediment)
     wombat%p_det_sediment(:,:,1) = wombat%p_det_sediment(:,:,1) + wombat%det_btm(:,:) ! [mol/m2]
     call g_tracer_set_values(tracer_list, 'det', 'btm_reservoir', 0.0)
 
-    call g_tracer_get_values(tracer_list, 'detfe', 'btm_reservoir', wombat%detfe_btm, isd, jsd)
     call g_tracer_get_pointer(tracer_list, 'detfe_sediment', 'field', wombat%p_detfe_sediment)
     wombat%p_detfe_sediment(:,:,1) = wombat%p_detfe_sediment(:,:,1) + wombat%detfe_btm(:,:) ! [mol/m2]
     call g_tracer_set_values(tracer_list, 'detfe', 'btm_reservoir', 0.0)
 
-    call g_tracer_get_values(tracer_list, 'caco3', 'btm_reservoir', wombat%caco3_btm, isd, jsd)
     call g_tracer_get_pointer(tracer_list, 'caco3_sediment', 'field', wombat%p_caco3_sediment)
     wombat%p_caco3_sediment(:,:,1) =  wombat%p_caco3_sediment(:,:,1) + wombat%caco3_btm(:,:) ! [mol/m2]
     call g_tracer_set_values(tracer_list, 'caco3', 'btm_reservoir', 0.0)
@@ -1747,6 +1787,18 @@ module generic_WOMBATlite
 
     if (wombat%id_caco3_sed_depst .gt. 0) &
       used = g_send_data(wombat%id_caco3_sed_depst, wombat%caco3_btm / dt, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_det_sed_bury .gt. 0) &
+      used = g_send_data(wombat%id_det_sed_bury, wombat%det_sed_bury / dt, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_detfe_sed_bury .gt. 0) &
+      used = g_send_data(wombat%id_detfe_sed_bury, wombat%detfe_sed_bury / dt, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_caco3_sed_bury .gt. 0) &
+      used = g_send_data(wombat%id_caco3_sed_bury, wombat%caco3_sed_bury / dt, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
   end subroutine generic_WOMBATlite_update_from_bottom
@@ -3745,10 +3797,13 @@ module generic_WOMBATlite
     allocate(wombat%caco3_prev(isd:ied, jsd:jed, 1:nk)); wombat%caco3_prev(:,:,:)=0.0
     allocate(wombat%det_sed_remin(isd:ied, jsd:jed)); wombat%det_sed_remin(:,:)=0.0
     allocate(wombat%det_btm(isd:ied, jsd:jed)); wombat%det_btm(:,:)=0.0
+    allocate(wombat%det_sed_bury(isd:ied, jsd:jed)); wombat%det_sed_bury(:,:)=0.0
     allocate(wombat%detfe_sed_remin(isd:ied, jsd:jed)); wombat%detfe_sed_remin(:,:)=0.0
     allocate(wombat%detfe_btm(isd:ied, jsd:jed)); wombat%detfe_btm(:,:)=0.0
+    allocate(wombat%detfe_sed_bury(isd:ied, jsd:jed)); wombat%detfe_sed_bury(:,:)=0.0
     allocate(wombat%caco3_sed_remin(isd:ied, jsd:jed)); wombat%caco3_sed_remin(:,:)=0.0
     allocate(wombat%caco3_btm(isd:ied, jsd:jed)); wombat%caco3_btm(:,:)=0.0
+    allocate(wombat%caco3_sed_bury(isd:ied, jsd:jed)); wombat%caco3_sed_bury(:,:)=0.0
     allocate(wombat%zw(isd:ied, jsd:jed, 1:nk)); wombat%zw(:,:,:)=0.0
     allocate(wombat%zm(isd:ied, jsd:jed, 1:nk)); wombat%zm(:,:,:)=0.0
 
@@ -3882,10 +3937,13 @@ module generic_WOMBATlite
         wombat%caco3_prev, &
         wombat%det_sed_remin, &
         wombat%det_btm, &
+        wombat%det_sed_bury, &
         wombat%detfe_sed_remin, &
         wombat%detfe_btm, &
+        wombat%detfe_sed_bury, &
         wombat%caco3_sed_remin, &
         wombat%caco3_btm, &
+        wombat%caco3_sed_bury, &
         wombat%zw, &
         wombat%zm)
 
