@@ -122,6 +122,8 @@ module generic_WOMBATlite
     ! See user_add_params for descriptions of each parameter
     logical :: &
         init, &
+        caco3_dynamics, &
+        burial, &
         force_update_fluxes ! Set in generic_tracer_nml
 
     real :: &
@@ -153,7 +155,6 @@ module generic_WOMBATlite
         phybiot, &
         caco3lrem, &
         caco3lrem_sed, &
-        wcaco3, &
         f_inorg, &
         ligand, &
         knano_dfe, &
@@ -196,7 +197,8 @@ module generic_WOMBATlite
 
     real, dimension(:,:,:), allocatable :: &
         htotal, ahtotal, &
-        omega_ara, omega_cal
+        omega_ara, omega_cal, &
+        co3, co2_star
 
     !-----------------------------------------------------------------------
     ! Arrays for tracer fields and source terms
@@ -303,6 +305,8 @@ module generic_WOMBATlite
         zooslopdet, &
         reminr, &
         detremi, &
+        pic2poc, &
+        dissrat, &
         caldiss, &
         no3_prev, &
         caco3_prev, &
@@ -322,7 +326,8 @@ module generic_WOMBATlite
 
     real, dimension(:,:,:), pointer :: &
         p_wdet, &
-        p_wdetfe
+        p_wdetfe, &
+        p_wcaco3
 
     real, dimension(:,:), pointer :: &
         p_no3_stf, &
@@ -341,6 +346,8 @@ module generic_WOMBATlite
         id_ahtotal = -1, &
         id_omega_ara = -1, &
         id_omega_cal = -1, &
+        id_co3 = -1, &
+        id_co2_star = -1, &
         id_no3_vstf = -1, &
         id_dic_vstf = -1, &
         id_adic_vstf = -1, &
@@ -386,6 +393,8 @@ module generic_WOMBATlite
         id_zooslopdet = -1, &
         id_reminr = -1, &
         id_detremi = -1, &
+        id_pic2poc = -1, &
+        id_dissrat = -1, &
         id_caldiss = -1, &
         id_phy_mumax = -1, &
         id_phy_mu = -1, &
@@ -648,6 +657,16 @@ module generic_WOMBATlite
     vardesc_temp = vardesc( &
         'omega_cal', 'Saturation state of calcite', 'h', 'L', 's', ' ', 'f')
     wombat%id_omega_cal = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'co3', 'Carbonate ion concentration', 'h', 'L', 's', 'mol/kg', 'f')
+    wombat%id_co3 = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'co2_star', 'CO2* (CO2(g) + H2CO3)) concentration', 'h', 'L', 's', 'mol/kg', 'f')
+    wombat%id_co2_star = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
@@ -980,17 +999,27 @@ module generic_WOMBATlite
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'reminr', 'rate of remineralisation', 'h', 'L', 's', '/s', 'f')
+        'reminr', 'Rate of remineralisation', 'h', 'L', 's', '/s', 'f')
     wombat%id_reminr = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'detremi', 'Remineralisation rate of detritus', 'h', 'L', 's', 'molC/kg/s', 'f')
+        'detremi', 'Remineralisation of detritus', 'h', 'L', 's', 'molC/kg/s', 'f')
     wombat%id_detremi = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'caldiss', 'Dissolution rate of CaCO3', 'h', 'L', 's', 'molCaCO3/kg/s', 'f')
+        'pic2poc', 'Inorganic (CaCO3) to organic carbon ratio', 'h', 'L', 's', ' ', 'f')
+    wombat%id_pic2poc = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'dissrat', 'Dissolution rate of CaCO3', 'h', 'L', 's', '/s', 'f')
+    wombat%id_dissrat = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'caldiss', 'Dissolution of CaCO3', 'h', 'L', 's', 'molCaCO3/kg/s', 'f')
     wombat%id_caldiss = register_diag_field(package_name, vardesc_temp%name, axes(1:3), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
@@ -1348,6 +1377,14 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     call g_tracer_add_param('phybiot', wombat%phybiot, 0.6)
 
+    ! Do dynamic CaCO3 precipiation, dissolution and ballasting? 
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('caco3_dynamics', wombat%caco3_dynamics, .true. )
+
+    ! Permanental burial organics and CaCO3 in sediments? 
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('burial', wombat%burial, .true. )
+
     ! CaCO3 remineralisation rate constant [1/s]
     !-----------------------------------------------------------------------
     ! Default value matches 0.001714 day-1 in Ziehn et al 2020; differs from
@@ -1360,7 +1397,7 @@ module generic_WOMBATlite
 
     ! CaCO3 inorganic fraction [1]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('f_inorg', wombat%f_inorg, 0.05)
+    call g_tracer_add_param('f_inorg', wombat%f_inorg, 0.04)
 
     ! Background concentration of iron-binding ligand [umol/m3]
     !-----------------------------------------------------------------------
@@ -1425,12 +1462,6 @@ module generic_WOMBATlite
     as_coeff_wombatlite = 0.31 / 3.6e5
 
     call g_tracer_start_param_list(package_name)
-
-    ! CaCO3 sinking velocity [m/s]
-    !-----------------------------------------------------------------------
-    ! Default value matches Ziehn et al 2020 but differs from Hayashida et
-    ! al 2020
-    call g_tracer_add_param('wcaco3', wombat%wcaco3, 5.0/86400.0)
 
     ! Detritus sinking velocity [m/s]
     !-----------------------------------------------------------------------
@@ -1565,7 +1596,8 @@ module generic_WOMBATlite
         longname = 'CaCO3', &
         units = 'mol/kg', &
         prog = .true., &
-        sink_rate = wombat%wcaco3, &
+        move_vertical = .true., &
+        flux_bottom = .false., &
         btm_reservoir = .true.)
 
     ! ADIC (Natural + anthropogenic dissolved inorganic carbon)
@@ -1763,6 +1795,7 @@ module generic_WOMBATlite
     call g_tracer_get_values(tracer_list, 'caco3', 'btm_reservoir', wombat%caco3_btm, isd, jsd)
 
     ! Calculate burial of deposited detritus (Dunne et al., 2007)
+    if (wombat%burial) then
     do i = isc, iec
       do j = jsc, jec
         orgflux = wombat%det_btm(i,j) / dt * 86400 * 1e6 * 1e4  ! umol C cm-2 day-1
@@ -1775,6 +1808,7 @@ module generic_WOMBATlite
     wombat%det_btm = wombat%det_btm - wombat%det_sed_bury
     wombat%detfe_btm = wombat%detfe_btm - wombat%detfe_sed_bury
     wombat%caco3_btm = wombat%caco3_btm - wombat%caco3_sed_bury
+    endif
 
     call g_tracer_get_pointer(tracer_list, 'det_sediment', 'field', wombat%p_det_sediment)
     wombat%p_det_sediment(:,:,1) = wombat%p_det_sediment(:,:,1) + wombat%det_btm(:,:) ! [mol/m2]
@@ -1920,6 +1954,7 @@ module generic_WOMBATlite
     real                                    :: phy_pisl, phy_pisl2 
     real                                    :: pchl_pisl, pchl_mumin, pchl_muopt
     real, dimension(:,:), allocatable       :: ek_bgr, par_bgr_mid, par_bgr_top
+    real, dimension(:), allocatable         :: wsink
     real, dimension(4,61)                   :: zbgr
     real                                    :: ztemk, fe_keq, fe_par, fe_sfe, fe_tfe, partic
     real                                    :: fesol1, fesol2, fesol3, fesol4, fesol5, hp, fe3sol
@@ -1927,6 +1962,7 @@ module generic_WOMBATlite
     real                                    :: phy_Fe2C, zoo_Fe2C, det_Fe2C
     real                                    :: phy_minqfe, phy_maxqfe
     real                                    :: zoo_slmor, epsmin
+    real                                    :: hco3, diss_cal, diss_ara, diss_det
     real, dimension(:,:,:,:), allocatable   :: n_pools, c_pools
     logical                                 :: used
 
@@ -2058,7 +2094,7 @@ module generic_WOMBATlite
            wombat%htotal(:,:,k), &
            co2_calc=trim(co2_calc), &
            zt=wombat%zw(:,:,k), &
-           co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), &
+           co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), co3_ion=wombat%co3(:,:,k), &
            pCO2surf=wombat%pco2_csurf(:,:), omega_arag=wombat%omega_ara(:,:,k), omega_calc=wombat%omega_cal(:,:,k))
  
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
@@ -2079,6 +2115,8 @@ module generic_WOMBATlite
        call g_tracer_set_values(tracer_list, 'adic', 'alpha', wombat%aco2_alpha, isd, jsd)
        call g_tracer_set_values(tracer_list, 'adic', 'csurf', wombat%aco2_csurf, isd, jsd)
 
+       wombat%co2_star(:,:,1) = wombat%co2_csurf(:,:)
+
      else
 
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
@@ -2089,9 +2127,10 @@ module generic_WOMBATlite
            min(wombat%alk_max*mmol_m3_to_mol_kg, max(wombat%f_alk(:,:,k), wombat%alk_min*mmol_m3_to_mol_kg)), &
            wombat%htotallo(:,:), wombat%htotalhi(:,:), &
            wombat%htotal(:,:,k), &
-           co2_calc=trim(co2_calc), &
-           zt=wombat%zw(:,:,k), omega_arag=wombat%omega_ara(:,:,k), omega_calc=wombat%omega_cal(:,:,k))
- 
+           co2_calc=trim(co2_calc), zt=wombat%zw(:,:,k), &
+           co2star=wombat%co2_star(:,:,k), co3_ion=wombat%co3(:,:,k), &
+           omega_arag=wombat%omega_ara(:,:,k), omega_calc=wombat%omega_cal(:,:,k))
+
        call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,k), &
            Temp(:,:,k), Salt(:,:,k), &
            min(wombat%dic_max*mmol_m3_to_mol_kg, max(wombat%f_adic(:,:,k), wombat%dic_min*mmol_m3_to_mol_kg)), &
@@ -2155,6 +2194,8 @@ module generic_WOMBATlite
     wombat%zooslopdet(:,:,:) = 0.0
     wombat%reminr(:,:,:) = 0.0
     wombat%detremi(:,:,:) = 0.0
+    wombat%pic2poc(:,:,:) = 0.0
+    wombat%dissrat(:,:,:) = 0.0
     wombat%caldiss(:,:,:) = 0.0
     wombat%export_prod(:,:) = 0.0
     wombat%export_inorg(:,:) = 0.0
@@ -2181,6 +2222,7 @@ module generic_WOMBATlite
     wombat%zeuphot(:,:) = 0.0
 
     ! Allocate and initialise some multi-dimensional variables
+    allocate(wsink(nk)); wsink(:)=0.0
     allocate(ek_bgr(nk,3)); ek_bgr(:,:)=0.0
     allocate(par_bgr_mid(nk,3)); par_bgr_mid(:,:)=0.0
     allocate(par_bgr_top(nk,3)); par_bgr_top(:,:)=0.0
@@ -2382,10 +2424,10 @@ module generic_WOMBATlite
       enddo  !} k
 
       ! dts: in WOMBAT v3, export production was calucated before updating the source terms so we do
-      ! the same here
+      ! the same here. pjb: need to fix this.
       k = k100(i,j)
-      wombat%export_prod(i,j) = (wombat%Rho_0 * wombat%wdetbio) * wombat%f_det(i,j,k) ! [mol/m2/s]
-      wombat%export_inorg(i,j) = (wombat%Rho_0 * wombat%wcaco3) * wombat%f_caco3(i,j,k) ! [mol/m2/s]
+      !wombat%export_prod(i,j) = (wombat%Rho_0 * wombat%wdetbio) * wombat%f_det(i,j,k) ! [mol/m2/s]
+      !wombat%export_inorg(i,j) = (wombat%Rho_0 * wombat%wcaco3) * wombat%f_caco3(i,j,k) ! [mol/m2/s]
     enddo; enddo
 
     wombat%no3_prev(:,:,:) = wombat%f_no3(:,:,:)
@@ -2627,22 +2669,30 @@ module generic_WOMBATlite
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
 
+      if (wombat%caco3_dynamics) then
+
+        ! PIC:POC ratio is a function of the substrate:inhibitor ratio, which is the 
+        !  HCO3- to free H+ ions ratio (mol/umol), following Lehmann & Bach (2024). 
+        !  We also add a T-dependent function to scale down CaCO3 production in waters colder 
+        !  than 3 degrees C based off the observation of no E hux growth beneath this (Fielding 2013; L&O)
+        hco3 = wombat%f_dic(i,j,k) - wombat%co3(i,j,k) - wombat%co2_star(i,j,k)
+        wombat%pic2poc(i,j,k) = min(0.3, (wombat%f_inorg + 10**(-3.0 + 4.31 * &
+                                          hco3 / (wombat%htotal(i,j,k)*1e6))) * &
+                                         (0.55 + 0.45 * tanh(Temp(i,j,k) - 4.0)) )
+
+        ! The dissolution rate is a function of omegas for calcite and aragonite, as well the
+        !  concentration of POC, following Kwon et al., 2024, Science Advances; Table S1
+        diss_cal = (0.253 * max(0.0, 1.0 - wombat%omega_cal(i,j,k))**2.2) / 86400.0
+        diss_ara = (0.090 * max(0.0, 1.0 - wombat%omega_ara(i,j,k))**1.5) / 86400.0
+        diss_det = (0.250 * wombat%reminr(i,j,k) * biodet**2.0)
+        wombat%dissrat(i,j,k) = diss_cal + diss_ara + diss_det
+
+      else
       
-      !! PIC:POC ratio is a function of the substrate:inhibitor ratio, which is the HCO3- to free H+ ions ratio (mol/nmol), 
-      !!  following Lehmann & Bach (2024). We also add a T-dependent function to scale down CaCO3 production in waters colder 
-      !!  than 3 degrees C based off the observation of no E hux growth beneath this (Fielding 2013; L&O)
-      !wombat%pic2poc(i,j,k) = min(0.3, (wombat%f_inorg + 10**(-3.0 + 4.31 * &
-      !                                  wombat%hco3(i,j,k)*1e-3 / (wombat%hfree(i,j,k)*1e9))) * &
-      !                        (0.55 + 0.45 * tanh(Temp(i,j,k) - 4.0))
-
-      !! The dissolution rate is a function of omegas for calcite and aragonite, as well the
-      !!  concentration of POC, following Kwon et al., 2024, Science Advances; Table S1
-      !diss_cal = (0.253 * max(0.0, 1.0 - wombat%omega_cal(i,j,k))**2.2) / 86400.0
-      !diss_ara = (0.090 * max(0.0, 1.0 - wombat%omega_ara(i,j,k))**1.5) / 86400.0
-      !diss_det = (0.250 * biodet * fbc * detlrem(i,j))
-      !wombat%caco3dis(i,j,k) = diss_cal + diss_ara + diss_det
-
-
+        wombat%pic2poc(i,j,k) = wombat%f_inorg + 0.025
+        wombat%dissrat(i,j,k) = wombat%caco3lrem
+      
+      endif
 
       !-----------------------------------------------------------------------!
       !-----------------------------------------------------------------------!
@@ -2694,7 +2744,7 @@ module generic_WOMBATlite
       endif
       
       if (wombat%f_caco3(i,j,k) .gt. epsi) then
-        wombat%caldiss(i,j,k) = wombat%caco3lrem * wombat%f_caco3(i,j,k) ! [mol/kg/s]
+        wombat%caldiss(i,j,k) = wombat%dissrat(i,j,k) * wombat%f_caco3(i,j,k) ! [mol/kg/s]
       else
         wombat%caldiss(i,j,k) = 0.0
       endif
@@ -2805,9 +2855,9 @@ module generic_WOMBATlite
       ! Equation for CaCO3 ! [molCaCO3/kg]
       !-----------------------------------------------------------------------
       wombat%f_caco3(i,j,k) = wombat%f_caco3(i,j,k) + dtsb * ( &
-                                wombat%zooslopphy(i,j,k) * wombat%f_inorg + &
-                                wombat%phymort(i,j,k) * wombat%f_inorg + &
-                                wombat%zoomort(i,j,k) * wombat%f_inorg - &
+                                wombat%zooslopphy(i,j,k) * wombat%pic2poc(i,j,k) + &
+                                wombat%phymort(i,j,k) * wombat%pic2poc(i,j,k) + &
+                                wombat%zoomort(i,j,k) * wombat%pic2poc(i,j,k) - &
                                 wombat%caldiss(i,j,k) )
 
       ! Equation for DIC ! [molC/kg]
@@ -2819,9 +2869,9 @@ module generic_WOMBATlite
                               wombat%zooexcrdet(i,j,k) + &
                               wombat%phyresp(i,j,k) - &
                               wombat%phygrow(i,j,k) - &
-                              wombat%zooslopphy(i,j,k) * wombat%f_inorg - &
-                              wombat%phymort(i,j,k) * wombat%f_inorg - &
-                              wombat%zoomort(i,j,k) * wombat%f_inorg + &  
+                              wombat%zooslopphy(i,j,k) * wombat%pic2poc(i,j,k) - &
+                              wombat%phymort(i,j,k) * wombat%pic2poc(i,j,k) - &
+                              wombat%zoomort(i,j,k) * wombat%pic2poc(i,j,k) + &  
                               wombat%caldiss(i,j,k) )
 
       ! Equation for aDIC ! [molC/kg]
@@ -2833,9 +2883,9 @@ module generic_WOMBATlite
                                wombat%zooexcrdet(i,j,k) + &
                                wombat%phyresp(i,j,k) - &
                                wombat%phygrow(i,j,k) - &
-                               wombat%zooslopphy(i,j,k) * wombat%f_inorg - &
-                               wombat%phymort(i,j,k) * wombat%f_inorg - &
-                               wombat%zoomort(i,j,k) * wombat%f_inorg + &  
+                               wombat%zooslopphy(i,j,k) * wombat%pic2poc(i,j,k) - &
+                               wombat%phymort(i,j,k) * wombat%pic2poc(i,j,k) - &
+                               wombat%zoomort(i,j,k) * wombat%pic2poc(i,j,k) + &  
                                wombat%caldiss(i,j,k) )
 
       ! Equation for ALK ! [molC/kg]
@@ -2848,9 +2898,9 @@ module generic_WOMBATlite
                               wombat%zooexcrdet(i,j,k) - &
                               wombat%phyresp(i,j,k) ) + dtsb * 2.0 * ( &
                               wombat%caldiss(i,j,k) - &
-                              wombat%zooslopphy(i,j,k) * wombat%f_inorg - &
-                              wombat%phymort(i,j,k) * wombat%f_inorg - &
-                              wombat%zoomort(i,j,k) * wombat%f_inorg ) 
+                              wombat%zooslopphy(i,j,k) * wombat%pic2poc(i,j,k) - &
+                              wombat%phymort(i,j,k) * wombat%pic2poc(i,j,k) - &
+                              wombat%zoomort(i,j,k) * wombat%pic2poc(i,j,k) ) 
 
       ! Extra equation for iron ! [molFe/kg]
       !-----------------------------------------------------------------------
@@ -2942,9 +2992,9 @@ module generic_WOMBATlite
           print*, "         zooexcrphy (molC/kg/s) = ", wombat%zooexcrphy(i,j,k)
           print*, "         zooexcrdet (molC/kg/s) = ", wombat%zooexcrdet(i,j,k)
           print*, "         phyresp (molC/kg/s) = ", wombat%phyresp(i,j,k)
-          print*, "         zooslopphy * f_inorg (molC/kg/s) = ", wombat%zooslopphy(i,j,k)*wombat%f_inorg
-          print*, "         phymort * f_inorg (molC/kg/s) = ", wombat%phymort(i,j,k)*wombat%f_inorg
-          print*, "         zoomort * f_inorg (molC/kg/s) = ", wombat%zoomort(i,j,k)*wombat%f_inorg
+          print*, "         zooslopphy * pic2poc(i,j,k) (molC/kg/s) = ", wombat%zooslopphy(i,j,k)*wombat%pic2poc(i,j,k)
+          print*, "         phymort * pic2poc(i,j,k) (molC/kg/s) = ", wombat%phymort(i,j,k)*wombat%pic2poc(i,j,k)
+          print*, "         zoomort * pic2poc(i,j,k) (molC/kg/s) = ", wombat%zoomort(i,j,k)*wombat%pic2poc(i,j,k)
           print*, "         caldiss (molC/kg/s) = ", wombat%caldiss(i,j,k)
           print*, " "
           stop
@@ -3046,23 +3096,25 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     call g_tracer_get_pointer(tracer_list, 'det', 'vmove', wombat%p_wdet) ! [m/s]
     call g_tracer_get_pointer(tracer_list, 'detfe', 'vmove', wombat%p_wdetfe) ! [m/s]
+    call g_tracer_get_pointer(tracer_list, 'caco3', 'vmove', wombat%p_wcaco3) ! [m/s]
 
     ! Variable sinking rates of organic detritus (positive for sinking when GOLDtridiag == .true.)
     !                                            (negative for sinking when IOWtridiag ==.true.)
     do j = jsc,jec; do i = isc,iec;
       if (grid_kmt(i,j).gt.0) then
         biophy1  = max(epsi, wombat%f_phy(i,j,1) ) / mmol_m3_to_mol_kg  ![mmol/m3]
-        wombat%p_wdet(i,j,:) = wombat%wdetbio * max(1e-3, biophy1 - wombat%phybiot)**(0.21)
-        wombat%p_wdetfe(i,j,:) = wombat%wdetbio * max(1e-3, biophy1 - wombat%phybiot)**(0.21)
+        wsink(:) = wombat%wdetbio * max(1e-3, biophy1 - wombat%phybiot)**(0.21) 
         do k=1,nk
-          wombat%p_wdet(i,j,k) = wombat%p_wdet(i,j,k) + max(0.0, &
-                                 wombat%zw(i,j,k)/5000.0 * (wombat%wdetmax - wombat%p_wdet(i,j,k)))
-          wombat%p_wdetfe(i,j,k) = wombat%p_wdetfe(i,j,k) + max(0.0, &
-                                   wombat%zw(i,j,k)/5000.0 * (wombat%wdetmax - wombat%p_wdetfe(i,j,k)))
+          wsink(k) = wsink(k) + 30.0/86400.0 * min(1.0, (wombat%f_caco3(i,j,k) / (wombat%f_det(i,j,k) + epsi)))
+          wsink(k) = wsink(k) + max(0.0, wombat%zw(i,j,k)/5000.0 * (wombat%wdetmax - wsink(k)))
         enddo
+        wombat%p_wdet(i,j,:) = wsink(:) 
+        wombat%p_wdetfe(i,j,:) = wsink(:)
+        wombat%p_wcaco3(i,j,:) = wsink(:)
       else
         wombat%p_wdet(i,j,:) = 0.0
         wombat%p_wdetfe(i,j,:) = 0.0
+        wombat%p_wcaco3(i,j,:) = 0.0
       endif
     enddo; enddo
 
@@ -3136,6 +3188,14 @@ module generic_WOMBATlite
 
     if (wombat%id_omega_cal .gt. 0) &
       used = g_send_data(wombat%id_omega_cal, wombat%omega_cal, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_co3 .gt. 0) &
+      used = g_send_data(wombat%id_co3, wombat%co3, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_co2_star .gt. 0) &
+      used = g_send_data(wombat%id_co2_star, wombat%co2_star, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_no3_vstf .gt. 0) &
@@ -3328,6 +3388,14 @@ module generic_WOMBATlite
 
     if (wombat%id_detremi .gt. 0) &
       used = g_send_data(wombat%id_detremi, wombat%detremi, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_pic2poc .gt. 0) &
+      used = g_send_data(wombat%id_pic2poc, wombat%pic2poc, model_time, &
+          rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
+
+    if (wombat%id_dissrat .gt. 0) &
+      used = g_send_data(wombat%id_dissrat, wombat%dissrat, model_time, &
           rmask=grid_tmask, is_in=isc, js_in=jsc, ks_in=1, ie_in=iec, je_in=jec, ke_in=nk)
 
     if (wombat%id_caldiss .gt. 0) &
@@ -3591,7 +3659,7 @@ module generic_WOMBATlite
           wombat%htotal(:,:,1), &
           co2_calc=trim(co2_calc), &
           zt=dzt(:,:,1), &
-          co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), &
+          co2star=wombat%co2_csurf(:,:), alpha=wombat%co2_alpha(:,:), co3_ion=wombat%co3(:,:,1), &
           pCO2surf=wombat%pco2_csurf(:,:), omega_arag=wombat%omega_ara(:,:,1), omega_calc=wombat%omega_cal(:,:,1))
 
       call FMS_ocmip2_co2calc(CO2_dope_vec, grid_tmask(:,:,1), &
@@ -3753,6 +3821,8 @@ module generic_WOMBATlite
     allocate(wombat%ahtotal(isd:ied, jsd:jed, 1:nk)); wombat%ahtotal(:,:,:)=wombat%htotal_in
     allocate(wombat%omega_ara(isd:ied, jsd:jed, 1:nk)); wombat%omega_ara(:,:,:)=1.0
     allocate(wombat%omega_cal(isd:ied, jsd:jed, 1:nk)); wombat%omega_cal(:,:,:)=1.0
+    allocate(wombat%co3(isd:ied, jsd:jed, 1:nk)); wombat%co3(:,:,:)=0.0
+    allocate(wombat%co2_star(isd:ied, jsd:jed, 1:nk)); wombat%co2_star(:,:,:)=0.0
     allocate(wombat%sio2(isd:ied, jsd:jed)); wombat%sio2(:,:)=wombat%sio2_surf
     allocate(wombat%co2_csurf(isd:ied, jsd:jed)); wombat%co2_csurf(:,:)=0.0
     allocate(wombat%co2_alpha(isd:ied, jsd:jed)); wombat%co2_alpha(:,:)=0.0
@@ -3841,6 +3911,8 @@ module generic_WOMBATlite
     allocate(wombat%zooslopdet(isd:ied, jsd:jed, 1:nk)); wombat%zooslopdet(:,:,:)=0.0
     allocate(wombat%reminr(isd:ied, jsd:jed, 1:nk)); wombat%reminr(:,:,:)=0.0
     allocate(wombat%detremi(isd:ied, jsd:jed, 1:nk)); wombat%detremi(:,:,:)=0.0
+    allocate(wombat%pic2poc(isd:ied, jsd:jed, 1:nk)); wombat%pic2poc(:,:,:)=0.0
+    allocate(wombat%dissrat(isd:ied, jsd:jed, 1:nk)); wombat%dissrat(:,:,:)=0.0
     allocate(wombat%caldiss(isd:ied, jsd:jed, 1:nk)); wombat%caldiss(:,:,:)=0.0
     allocate(wombat%no3_prev(isd:ied, jsd:jed, 1:nk)); wombat%no3_prev(:,:,:)=0.0
     allocate(wombat%caco3_prev(isd:ied, jsd:jed, 1:nk)); wombat%caco3_prev(:,:,:)=0.0
@@ -3897,6 +3969,8 @@ module generic_WOMBATlite
         wombat%ahtotal, &
         wombat%omega_ara, &
         wombat%omega_cal, &
+        wombat%co3, &
+        wombat%co2_star, &
         wombat%co2_csurf, &
         wombat%co2_alpha, &
         wombat%co2_sc_no, &
@@ -3983,6 +4057,8 @@ module generic_WOMBATlite
         wombat%zooslopdet, &
         wombat%reminr, &
         wombat%detremi, &
+        wombat%pic2poc, &
+        wombat%dissrat, &
         wombat%caldiss, &
         wombat%no3_prev, &
         wombat%caco3_prev, &
