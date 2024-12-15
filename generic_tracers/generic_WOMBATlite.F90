@@ -159,6 +159,7 @@ module generic_WOMBATlite
         ligand, &
         knano_dfe, &
         kscav_dfe, &
+        kcoag_dfe, &
         dt_npzd, &
         sal_global, &
         dic_global, &
@@ -242,7 +243,17 @@ module generic_WOMBATlite
         pprod_gross_int100, &
         npp_int100, &
         radbio_int100, &
-        zeuphot
+        zeuphot, &
+        seddep, &
+        sedmask, &
+        sedtemp, &
+        sedsalt, &
+        sedno3, &
+        seddic, &
+        sedalk, &
+        sedhtotal, &
+        sedco3, &
+        sedomega_cal
       
     real, dimension(:,:,:), allocatable :: &
         f_dic, &
@@ -426,7 +437,17 @@ module generic_WOMBATlite
         id_caco3_sed_remin = -1, &
         id_caco3_sed_depst = -1, &
         id_caco3_sed_bury = -1, &
-        id_zeuphot = -1
+        id_zeuphot = -1, &
+        id_seddep = -1, &
+        id_sedmask = -1, &
+        id_sedtemp = -1, &
+        id_sedsalt = -1, &
+        id_sedno3 = -1, &
+        id_seddic = -1, &
+        id_sedalk = -1, &
+        id_sedhtotal = -1, &
+        id_sedco3 = -1, &
+        id_sedomega_cal = -1
 
   end type generic_WOMBATlite_type
 
@@ -1109,9 +1130,58 @@ module generic_WOMBATlite
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
     vardesc_temp = vardesc( &
-        'zeuphot', 'Depth of the euphotic zone (defined as 1% of incident light)', &
-        'h', '1', 's', 'm', 'f')
+        'zeuphot', 'Depth of the euphotic zone (%1 incident light)', 'h', '1', 's', 'm', 'f')
     wombat%id_zeuphot = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'seddep', 'Depth of the sediment', 'h', '1', 's', 'm', 'f')
+    wombat%id_seddep = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'sedmask', 'Mask of active sediment points', 'h', '1', 's', ' ', 'f')
+    wombat%id_sedmask = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'sedtemp', 'Temperature at the deepest grid cell', 'h', '1', 's', 'deg C', 'f')
+    wombat%id_sedtemp = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'sedsalt', 'Salinity at the deepest grid cell', 'h', '1', 's', 'psu', 'f')
+    wombat%id_sedsalt = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'sedno3', 'Nitrate at the deepest grid cell', 'h', '1', 's', 'mol/kg', 'f')
+    wombat%id_sedno3 = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'seddic', 'Dissolved inorganic carbon at the deepest grid cell', 'h', '1', 's', 'mol/kg', 'f')
+    wombat%id_seddic = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'sedalk', 'Alkalinity at the deepest grid cell', 'h', '1', 's', 'mol/kg', 'f')
+    wombat%id_sedalk = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'sedhtotal', 'H+ ions at the deepest grid cell', 'h', '1', 's', 'mol/kg', 'f')
+    wombat%id_sedhtotal = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'sedco3', 'CO3 ions at the deepest grid cell', 'h', '1', 's', 'mol/kg', 'f')
+    wombat%id_sedco3 = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
+        init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
+
+    vardesc_temp = vardesc( &
+        'sedomega_cal', 'Calcite saturation state at the deepest grid cell', 'h', '1', 's', ' ', 'f')
+    wombat%id_sedomega_cal = register_diag_field(package_name, vardesc_temp%name, axes(1:2), &
         init_time, vardesc_temp%longname, vardesc_temp%units, missing_value=missing_value1)
 
   end subroutine generic_WOMBATlite_register_diag
@@ -1280,7 +1350,7 @@ module generic_WOMBATlite
 
     ! Zooplankton assimilation efficiency [1]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zooassi', wombat%zooassi, 0.5)
+    call g_tracer_add_param('zooassi', wombat%zooassi, 0.4)
 
     ! Zooplankton half saturation coefficient for linear mortality
     !-----------------------------------------------------------------------
@@ -1304,11 +1374,11 @@ module generic_WOMBATlite
 
     ! Zooplankton preference for detritus [0-1]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zprefdet', wombat%zprefdet, 0.25)
+    call g_tracer_add_param('zprefdet', wombat%zprefdet, 0.50)
 
     ! Zooplankton respiration rate constant [1/s]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('zoolmor', wombat%zoolmor, 0.05/86400.0)
+    call g_tracer_add_param('zoolmor', wombat%zoolmor, 0.01/86400.0)
 
     ! Zooplankton quadratic mortality rate constant [m3/mmolN/s]
     !-----------------------------------------------------------------------
@@ -1318,7 +1388,7 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     ! Detritus remineralisation rate for (>=180 m) is hard-coded to be
     ! detlrem/2
-    call g_tracer_add_param('detlrem', wombat%detlrem, 0.09/86400.0)
+    call g_tracer_add_param('detlrem', wombat%detlrem, 0.1/86400.0)
     
     ! Detritus sinking rate coefficient [m/s]
     !-----------------------------------------------------------------------
@@ -1333,7 +1403,7 @@ module generic_WOMBATlite
     ! This would normally equal detlrem, but we set the default value to be
     ! consistent with what is in ACCESS-ESM1.5 (undocumented in Ziehn et al
     ! 2020)
-    call g_tracer_add_param('detlrem_sed', wombat%detlrem_sed, 0.02/86400.0)
+    call g_tracer_add_param('detlrem_sed', wombat%detlrem_sed, 0.005/86400.0)
     
     ! Phytoplankton biomass threshold to scale recycling [mmolC/m3]
     !-----------------------------------------------------------------------
@@ -1355,7 +1425,7 @@ module generic_WOMBATlite
 
     ! CaCO3 remineralization rate constant in sediments [1/s]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('caco3lrem_sed', wombat%caco3lrem_sed, 0.0035/86400.0)
+    call g_tracer_add_param('caco3lrem_sed', wombat%caco3lrem_sed, 0.01/86400.0)
 
     ! CaCO3 inorganic fraction [1]
     !-----------------------------------------------------------------------
@@ -1363,7 +1433,7 @@ module generic_WOMBATlite
 
     ! Background concentration of iron-binding ligand [umol/m3]
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('ligand', wombat%ligand, 0.6)
+    call g_tracer_add_param('ligand', wombat%ligand, 0.5)
 
     ! Precipitation of Fe` as nanoparticles (in excess of solubility) [/d]
     !-----------------------------------------------------------------------
@@ -1372,6 +1442,10 @@ module generic_WOMBATlite
     ! Scavenging of Fe` onto biogenic particles [(mmolC/m3)-1 d-1]
     !-----------------------------------------------------------------------
     call g_tracer_add_param('kscav_dfe', wombat%kscav_dfe, 5e-2)
+
+    ! Coagulation of dFe onto organic particles [(mmolC/m3)-1 d-1]
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('kcoag_dfe', wombat%kcoag_dfe, 5e-8)
 
     ! Nested timestep for the ecosystem model [s]
     !-----------------------------------------------------------------------
@@ -1922,6 +1996,7 @@ module generic_WOMBATlite
     real                                    :: phy_pisl, phy_pisl2 
     real                                    :: pchl_pisl, pchl_mumin, pchl_muopt
     real, dimension(:,:), allocatable       :: ek_bgr, par_bgr_mid, par_bgr_top
+    !real, dimension(:,:), allocatable       :: seddep, sedmask
     real, dimension(:), allocatable         :: wsink
     real, dimension(4,61)                   :: zbgr
     real                                    :: ztemk, fe_keq, fe_par, fe_sfe, fe_tfe, partic
@@ -2034,6 +2109,9 @@ module generic_WOMBATlite
     ! and pco2surf, so it makes sense to set these values here rather than
     ! recalculating them in set_boundary_values.
     
+    !allocate(sedmask(isc:iec,jsc:jec)); sedmask(:,:)=0.0
+    !allocate(seddep(isc:iec,jsc:jec)); seddep(:,:)=0.0
+
     call g_tracer_get_values(tracer_list, 'dic', 'field', wombat%f_dic, isd, jsd, ntau=tau, &
         positive=.true.)
     call g_tracer_get_values(tracer_list, 'no3', 'field', wombat%f_no3, isd, jsd, ntau=tau, &
@@ -2083,7 +2161,7 @@ module generic_WOMBATlite
            omega_arag=wombat%omega_ara(:,:,k), omega_calc=wombat%omega_cal(:,:,k))
 
      endif !} if k.eq.1
-   enddo !} do k = 1,nk
+    enddo !} do k = 1,nk
 
     !=======================================================================
     ! Calculate the source terms
@@ -2157,6 +2235,16 @@ module generic_WOMBATlite
     wombat%npp_int100(:,:) = 0.0
     wombat%radbio_int100(:,:) = 0.0
     wombat%zeuphot(:,:) = 0.0
+    wombat%seddep(:,:) = 0.0
+    wombat%sedmask(:,:) = 0.0
+    wombat%sedtemp(:,:) = 0.0
+    wombat%sedsalt(:,:) = 0.0
+    wombat%sedno3(:,:) = 0.0
+    wombat%seddic(:,:) = 0.0
+    wombat%sedalk(:,:) = 0.0
+    wombat%sedhtotal(:,:) = 0.0
+    wombat%sedco3(:,:) = 0.0
+    wombat%sedomega_cal(:,:) = 0.0
 
     ! Allocate and initialise some multi-dimensional variables
     allocate(wsink(nk)); wsink(:)=0.0
@@ -2556,11 +2644,11 @@ module generic_WOMBATlite
       ! Coagulation of colloidal Fe (umol/m3) to form sinking particles (mmol/m3)
       ! Following Tagliabue et al. (2023), make coagulation rate dependent on DOC and Phytoplankton biomass
       biof = max(1/3., biophy / (biophy + 0.03))
-      biodoc = 2.0 + (1.0 - min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))) * 38.0 ! proxy of DOC (mmol/m3)
+      biodoc = 10.0 + (1.0 - min(wombat%phy_lnit(i,j,k), wombat%phy_lfer(i,j,k))) * 40.0 ! proxy of DOC (mmol/m3)
       if (wombat%zw(i,j,k).le.hblt_depth(i,j)) then
-        zval = (      (12.*biof*biodoc + 9.*biodet) + 2.5*biodet + 128.*biof*biodoc + 725.*biodet )*1e-6
+        zval = (      (12.*biof*biodoc + 9.*biodet) + 2.5*biodet + 128.*biof*biodoc + 725.*biodet )*wombat%kcoag_dfe
       else
-        zval = ( 0.01*(12.*biof*biodoc + 9.*biodet) + 2.5*biodet + 128.*biof*biodoc + 725.*biodet )*1e-6
+        zval = ( 0.01*(12.*biof*biodoc + 9.*biodet) + 2.5*biodet + 128.*biof*biodoc + 725.*biodet )*wombat%kcoag_dfe
       endif
       wombat%fecoag2det(i,j,k) = wombat%fecol(i,j,k) * zval / 86400.0
 
@@ -3060,26 +3148,57 @@ module generic_WOMBATlite
     do j = jsc,jec; do i = isc,iec;
       k = grid_kmt(i,j)
       if (k .gt. 0) then
-        fbc = wombat%bbioh ** (Temp(i,j,k)) ! [1]
-        wombat%det_sed_remin(i,j) = wombat%detlrem_sed * fbc * wombat%p_det_sediment(i,j,1) ! [mol/m2/s]
-        wombat%detfe_sed_remin(i,j) = wombat%detlrem_sed * fbc * wombat%p_detfe_sediment(i,j,1) ! [mol/m2/s]
-        wombat%caco3_sed_remin(i,j) = wombat%caco3lrem_sed * fbc * wombat%p_caco3_sediment(i,j,1) ! [mol/m2/s]
-        
-        ! Remineralisation of sediments to supply nutrient fields.
-        ! btf values are positive from the water column into the sediment.
-        wombat%b_no3(i,j) = -16./122. * wombat%det_sed_remin(i,j) ! [mol/m2/s]
-        wombat%b_o2(i,j) = -172./16. * wombat%b_no3(i,j) ! [mol/m2/s]
-        wombat%b_dic(i,j) = 122./16. * wombat%b_no3(i,j) - wombat%caco3_sed_remin(i,j) ! [mol/m2/s]
-        wombat%b_dicr(i,j) = wombat%b_dic(i,j) ! [mol/m2/s]
-        wombat%b_fe(i,j) = -1.0 * wombat%detfe_sed_remin(i,j) ! [mol/m2/s]
-        wombat%b_alk(i,j) = -2.0 * wombat%caco3_sed_remin(i,j) - wombat%b_no3(i,j) ! [mol/m2/s]
-
+      ! Get bottom conditions: mask, PO4, temp, salt, DIC, Alk, H+ ion
+        wombat%seddep(i,j) = wombat%zw(i,j,k)
+        wombat%sedmask(i,j) = grid_tmask(i,j,k)
+        wombat%sedtemp(i,j) = Temp(i,j,k)
+        wombat%sedsalt(i,j) = Salt(i,j,k)
+        wombat%sedno3(i,j) = wombat%f_no3(i,j,k)
+        wombat%seddic(i,j) = wombat%f_dic(i,j,k) + wombat%p_det_sediment(i,j,1) / wombat%Rho_0 
+        wombat%sedalk(i,j) = wombat%f_alk(i,j,k)
+        wombat%sedhtotal(i,j) = wombat%htotal(i,j,k)
       endif
+    enddo; enddo
+
+    call FMS_ocmip2_co2calc(CO2_dope_vec, wombat%sedmask(:,:), &
+        wombat%sedtemp(:,:), wombat%sedsalt(:,:), &
+        min(wombat%dic_max*mmol_m3_to_mol_kg, max(wombat%seddic(:,:), wombat%dic_min*mmol_m3_to_mol_kg)), &
+        max(wombat%sedno3(:,:) / 16., 1e-9), &
+        wombat%sio2(:,:), &
+        min(wombat%alk_max*mmol_m3_to_mol_kg, max(wombat%sedalk(:,:), wombat%alk_min*mmol_m3_to_mol_kg)), &
+        wombat%sedhtotal(:,:)*wombat%htotal_scale_lo, &
+        wombat%sedhtotal(:,:)*wombat%htotal_scale_hi, &
+        wombat%sedhtotal(:,:), &
+        co2_calc=trim(co2_calc), zt=wombat%seddep(:,:), &
+        co3_ion=wombat%sedco3(:,:), &
+        omega_calc=wombat%sedomega_cal(:,:))
+
+    do j = jsc,jec; do i = isc,iec;
+      fbc = wombat%bbioh ** (wombat%sedtemp(i,j))
+      wombat%det_sed_remin(i,j) = wombat%detlrem_sed * fbc * wombat%p_det_sediment(i,j,1) ! [mol/m2/s]
+      wombat%detfe_sed_remin(i,j) = wombat%detlrem_sed * fbc * wombat%p_detfe_sediment(i,j,1) ! [mol/m2/s]
+      if (wombat%caco3_dynamics) then
+        wombat%caco3_sed_remin(i,j) = wombat%caco3lrem_sed * fbc * wombat%p_caco3_sediment(i,j,1) * &
+                                            max(0.1, (1.0 - wombat%sedomega_cal(i,j)))**(4.5)
+      else
+        wombat%caco3_sed_remin(i,j) = wombat%caco3lrem_sed * fbc * wombat%p_caco3_sediment(i,j,1) * &
+                                            max(0.1, (1.0 - 0.2081))**(4.5)
+      endif
+      
+      ! Remineralisation of sediments to supply nutrient fields.
+      ! btf values are positive from the water column into the sediment.
+      wombat%b_no3(i,j) = -16./122. * wombat%det_sed_remin(i,j) ! [mol/m2/s]
+      wombat%b_o2(i,j) = -172./16. * wombat%b_no3(i,j) ! [mol/m2/s]
+      wombat%b_dic(i,j) = 122./16. * wombat%b_no3(i,j) - wombat%caco3_sed_remin(i,j) ! [mol/m2/s]
+      wombat%b_dicr(i,j) = wombat%b_dic(i,j) ! [mol/m2/s]
+      wombat%b_fe(i,j) = -1.0 * wombat%detfe_sed_remin(i,j) ! [mol/m2/s]
+      wombat%b_alk(i,j) = -2.0 * wombat%caco3_sed_remin(i,j) - wombat%b_no3(i,j) ! [mol/m2/s]
     enddo; enddo
 
     ! Apply remineralisation rates to sediment tracers
     !-----------------------------------------------------------------------
     do j = jsc,jec; do i = isc,iec;
+
       if (grid_kmt(i,j) .gt. 0) then
         wombat%p_det_sediment(i,j,1) = wombat%p_det_sediment(i,j,1) - dt * wombat%det_sed_remin(i,j) ! [mol/m2]
         wombat%p_detfe_sediment(i,j,1) = wombat%p_detfe_sediment(i,j,1) - dt * wombat%detfe_sed_remin(i,j) ! [mol/m2]
@@ -3459,6 +3578,46 @@ module generic_WOMBATlite
       used = g_send_data(wombat%id_zeuphot, wombat%zeuphot, model_time, &
           rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
 
+    if (wombat%id_seddep .gt. 0) &
+      used = g_send_data(wombat%id_seddep, wombat%seddep, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_sedmask .gt. 0) &
+      used = g_send_data(wombat%id_sedmask, wombat%sedmask, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_sedtemp .gt. 0) &
+      used = g_send_data(wombat%id_sedtemp, wombat%sedtemp, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_sedsalt .gt. 0) &
+      used = g_send_data(wombat%id_sedsalt, wombat%sedsalt, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_sedno3 .gt. 0) &
+      used = g_send_data(wombat%id_sedno3, wombat%sedno3, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_seddic .gt. 0) &
+      used = g_send_data(wombat%id_seddic, wombat%seddic, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_sedalk .gt. 0) &
+      used = g_send_data(wombat%id_sedalk, wombat%sedalk, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_sedhtotal .gt. 0) &
+      used = g_send_data(wombat%id_sedhtotal, wombat%sedhtotal, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_sedco3 .gt. 0) &
+      used = g_send_data(wombat%id_sedco3, wombat%sedco3, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
+    if (wombat%id_sedomega_cal .gt. 0) &
+      used = g_send_data(wombat%id_sedomega_cal, wombat%sedomega_cal, model_time, &
+          rmask=grid_tmask(:,:,1), is_in=isc, js_in=jsc, ie_in=iec, je_in=jec)
+
     deallocate(kmeuph, k100)
 
   end subroutine generic_WOMBATlite_update_from_source
@@ -3834,6 +3993,16 @@ module generic_WOMBATlite
     allocate(wombat%npp_int100(isd:ied, jsd:jed)); wombat%npp_int100(:,:)=0.0
     allocate(wombat%radbio_int100(isd:ied, jsd:jed)); wombat%radbio_int100(:,:)=0.0
     allocate(wombat%zeuphot(isd:ied, jsd:jed)); wombat%zeuphot(:,:)=0.0
+    allocate(wombat%seddep(isd:ied, jsd:jed)); wombat%seddep(:,:)=0.0
+    allocate(wombat%sedmask(isd:ied, jsd:jed)); wombat%sedmask(:,:)=0.0
+    allocate(wombat%sedtemp(isd:ied, jsd:jed)); wombat%sedtemp(:,:)=0.0
+    allocate(wombat%sedsalt(isd:ied, jsd:jed)); wombat%sedsalt(:,:)=0.0
+    allocate(wombat%sedno3(isd:ied, jsd:jed)); wombat%sedno3(:,:)=0.0
+    allocate(wombat%seddic(isd:ied, jsd:jed)); wombat%seddic(:,:)=0.0
+    allocate(wombat%sedalk(isd:ied, jsd:jed)); wombat%sedalk(:,:)=0.0
+    allocate(wombat%sedhtotal(isd:ied, jsd:jed)); wombat%sedhtotal(:,:)=0.0
+    allocate(wombat%sedco3(isd:ied, jsd:jed)); wombat%sedco3(:,:)=0.0
+    allocate(wombat%sedomega_cal(isd:ied, jsd:jed)); wombat%sedomega_cal(:,:)=0.0
 
   end subroutine user_allocate_arrays
 
@@ -3974,7 +4143,17 @@ module generic_WOMBATlite
         wombat%radbio_int100)
 
     deallocate( &
-        wombat%zeuphot)
+        wombat%zeuphot, &
+        wombat%seddep, &
+        wombat%sedmask, &
+        wombat%sedtemp, &
+        wombat%sedsalt, &
+        wombat%sedno3, &
+        wombat%seddic, &
+        wombat%sedalk, &
+        wombat%sedhtotal, &
+        wombat%sedco3, &
+        wombat%sedomega_cal)
 
   end subroutine user_deallocate_arrays
 
