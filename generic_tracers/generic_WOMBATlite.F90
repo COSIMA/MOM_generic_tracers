@@ -2302,6 +2302,8 @@ module generic_WOMBATlite
         positive=.true.) ! [mol/kg]
     call g_tracer_get_values(tracer_list, 'dicr', 'field', wombat%f_dicr, isd, jsd, ntau=tau, &
         positive=.true.) ! [mol/kg]
+    call g_tracer_get_values(tracer_list, 'dicp', 'field', wombat%f_dicp, isd, jsd, ntau=tau, &
+        positive=.true.) ! [mol/kg]
     call g_tracer_get_values(tracer_list, 'alk', 'field', wombat%f_alk, isd, jsd, ntau=tau, &
         positive=.true.) ! [mol/kg]
  
@@ -3092,6 +3094,7 @@ module generic_WOMBATlite
                                     - wombat%f_dic(i,j,k) ) * grid_tmask(i,j,k)
         wombat%f_alk(i,j,k) = wombat%f_alk(i,j,k) + wombat%alk_correct(i,j,k)
         wombat%f_dic(i,j,k) = wombat%f_dic(i,j,k) + wombat%dic_correct(i,j,k)
+        wombat%f_dicp(i,j,k) = max(wombat%dic_min * mmol_m3_to_mol_kg, wombat%f_dic(i,j,k))
     enddo; enddo; enddo
 
     ! Set tracers values
