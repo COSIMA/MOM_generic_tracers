@@ -156,6 +156,9 @@ module generic_WOMBATlite
         caco3lrem, &
         caco3lrem_sed, &
         f_inorg, &
+        disscal, &
+        dissara, &
+        dissdet, &
         ligand, &
         knano_dfe, &
         kscav_dfe, &
@@ -1430,6 +1433,18 @@ module generic_WOMBATlite
     ! CaCO3 inorganic fraction [1]
     !-----------------------------------------------------------------------
     call g_tracer_add_param('f_inorg', wombat%f_inorg, 0.04)
+
+    ! CaCO3 dissolution factor due to calcite undersaturation
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('disscal', wombat%disscal, 0.500)
+
+    ! CaCO3 dissolution factor due to aragonite undersaturation 
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('dissara', wombat%dissara, 0.100)
+
+    ! CaCO3 dissolution factor due to detritus remineralisation creating anoxic microenvironment
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('dissdet', wombat%dissdet, 0.250)
 
     ! Background concentration of iron-binding ligand [umol/m3]
     !-----------------------------------------------------------------------
@@ -2709,9 +2724,9 @@ module generic_WOMBATlite
 
         ! The dissolution rate is a function of omegas for calcite and aragonite, as well the
         !  concentration of POC, following Kwon et al., 2024, Science Advances; Table S1
-        diss_cal = (0.253 * max(0.0, 1.0 - wombat%omega_cal(i,j,k))**2.2) / 86400.0
-        diss_ara = (0.090 * max(0.0, 1.0 - wombat%omega_ara(i,j,k))**1.5) / 86400.0
-        diss_det = (0.250 * wombat%reminr(i,j,k) * biodet**2.0)
+        diss_cal = (wombat%disscal * max(0.0, 1.0 - wombat%omega_cal(i,j,k))**2.2) / 86400.0
+        diss_ara = (wombat%dissara * max(0.0, 1.0 - wombat%omega_ara(i,j,k))**1.5) / 86400.0
+        diss_det = (wombat%dissdet * wombat%reminr(i,j,k) * biodet**2.0)
         wombat%dissrat(i,j,k) = diss_cal + diss_ara + diss_det
 
       else
