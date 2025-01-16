@@ -3180,36 +3180,33 @@ contains
 
           nz=g_tracer_com%grid_kmt(i,j)
 
+          ! If a non-constant sinking rate were used, that would be incorprated here.
           if (g_tracer%move_vertical) then
             do k=2,nz; sink_dist(k) = (dt*g_tracer%vmove(i,j,k)) * m_to_H; enddo
           endif
           sfc_src = 0.0 ; btm_src = 0.0 
 
-          ! Find the sinking rates at all interfaces, limiting them if necesary
-          ! so that the characteristics do not cross within a timestep.
-          !   If a non-constant sinking rate were used, that would be incorprated
-          ! here.
+          ! Sinking of tracer into a sediment reservoir?
           if (_ALLOCATED(g_tracer%btm_reservoir)) then
-             do k=2,nz 
-                sink(k) = sink_dist(k) ; h_minus_dsink(k) = h_old(i,j,k)
-             enddo
              sink(nz+1) = sink_dist(nz) !PJB [13th Nov 2024] to allow sinking into bottom reservoir
           else
              sink(nz+1) = 0.0 
-             ! Find the limited sinking distance at the interfaces.
-             do k=nz,2,-1
-                if (sink(k+1) >= sink_dist(k)) then
-                   sink(k) = sink_dist(k)
-                   h_minus_dsink(k) = h_old(i,j,k) + (sink(k+1) - sink(k))
-                elseif (sink(k+1) + h_old(i,j,k) < sink_dist(k)) then
-                   sink(k) = sink(k+1) + h_old(i,j,k)
-                   h_minus_dsink(k) = 0.0
-                else
-                   sink(k) = sink_dist(k)
-                   h_minus_dsink(k) = (h_old(i,j,k) + sink(k+1)) - sink(k)
-                endif
-             enddo
           endif
+
+          ! Find the sinking rates at all interfaces, limiting them if necesary
+          ! so that the characteristics do not cross within a timestep.
+          do k=nz,2,-1
+             if (sink(k+1) >= sink_dist(k)) then
+                sink(k) = sink_dist(k)
+                h_minus_dsink(k) = h_old(i,j,k) + (sink(k+1) - sink(k))
+             elseif (sink(k+1) + h_old(i,j,k) < sink_dist(k)) then
+                sink(k) = sink(k+1) + h_old(i,j,k)
+                h_minus_dsink(k) = 0.0
+             else
+                sink(k) = sink_dist(k)
+                h_minus_dsink(k) = (h_old(i,j,k) + sink(k+1)) - sink(k)
+             endif
+          enddo
 
           sink(1) = 0.0 ; h_minus_dsink(1) = (h_old(i,j,1) + sink(2))
 
@@ -3231,6 +3228,11 @@ contains
           do k=2,nz-1 
              c1(k) = eb(i,j,k-1) * b1
              b_denom_1 = h_minus_dsink(k) + d1 * (ea(i,j,k) + sink(k))
+             if (b_denom_1.le.0.0) then
+               print*, "Warning: b_denom_1 <= 0 at (i, j, k):", i, j, k
+               print*, "Values: h_minus_dsink =", h_minus_dsink(k), "d1 =", d1, "ea =", ea(i,j,k), "sink =", sink(k)
+               stop "Error: Diagonal value b_denom_1 must be > 0.0"
+             endif
              b1 = 1.0 / (b_denom_1 + eb(i,j,k))
              d1 = b_denom_1 * b1
 
