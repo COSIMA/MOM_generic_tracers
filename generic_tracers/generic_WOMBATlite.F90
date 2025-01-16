@@ -3128,7 +3128,8 @@ module generic_WOMBATlite
         biophy1  = max(epsi, wombat%f_phy(i,j,1) ) / mmol_m3_to_mol_kg  ![mmol/m3]
         wsink(:) = wombat%wdetbio * max(0.0, biophy1 - wombat%phybiot)**(0.21) 
         do k=1,nk
-          !wsink(k) = wsink(k) + 10.0/86400.0 * min(1.0, (wombat%f_caco3(i,j,k) / (wombat%f_det(i,j,k) + epsi)))
+          wsink(k) = wsink(k) + 10.0/86400.0 * min(1.0, & 
+                                (wombat%f_caco3(i,j,k) / (wombat%f_det(i,j,k) + wombat%f_caco3(i,j,k))))
           ! Increase sinking rate with depth to achieve power law behaviour  
           wsink(k) = wsink(k) + max(0.0, wombat%zw(i,j,k)/5000.0 * (wombat%wdetmax - wsink(k)))
           ! Ensure that we don't violate the CFL criterion  
