@@ -2712,7 +2712,7 @@ module generic_WOMBATlite
         diss_cal = (wombat%disscal * max(0.0, 1.0 - wombat%omega_cal(i,j,k))**2.2) / 86400.0
         diss_ara = (wombat%dissara * max(0.0, 1.0 - wombat%omega_ara(i,j,k))**1.5) / 86400.0
         diss_det = (wombat%dissdet * wombat%reminr(i,j,k) * biodet**2.0)
-        wombat%dissrat(i,j,k) = wombat%caco3lrem*0.25 + diss_cal + diss_ara + diss_det
+        wombat%dissrat(i,j,k) = diss_cal + diss_ara + diss_det
 
       else
       
@@ -3129,11 +3129,11 @@ module generic_WOMBATlite
         wsink(:) = wombat%wdetbio * max(0.0, biophy1 - wombat%phybiot)**(0.21) 
         do k=1,nk
           wsink(k) = wsink(k) + 10.0/86400.0 * min(1.0, & 
-                                (wombat%f_caco3(i,j,k) / (wombat%f_det(i,j,k) + wombat%f_caco3(i,j,k))))
+                     (wombat%f_caco3(i,j,k) / (wombat%f_det(i,j,k) + wombat%f_caco3(i,j,k) + epsi)))
           ! Increase sinking rate with depth to achieve power law behaviour  
           wsink(k) = wsink(k) + max(0.0, wombat%zw(i,j,k)/5000.0 * (wombat%wdetmax - wsink(k)))
           ! Ensure that we don't violate the CFL criterion  
-          max_wsink = dzt(i,j,k) * 0.5 / dt  ! [m/s]
+          max_wsink = dzt(i,j,k) * 0.5 / (dt * 2)  ! [m/s]
           wsink(k) = min(wsink(k), max_wsink)
           ! CaCO3 sinks slower than general detritus because it tends to be smaller
           wsinkcal(k) = wsink(k) * wombat%wcaco3/wombat%wdetbio
