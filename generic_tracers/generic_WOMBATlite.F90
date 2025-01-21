@@ -124,6 +124,7 @@ module generic_WOMBATlite
         init, &
         caco3_dynamics, &
         burial, &
+        conservetracers, &
         force_update_fluxes ! Set in generic_tracer_nml
 
     real :: &
@@ -331,7 +332,8 @@ module generic_WOMBATlite
     real, dimension(:,:,:), pointer :: &
         p_det_sediment, &
         p_detfe_sediment, &
-        p_caco3_sediment
+        p_caco3_sediment, &
+        p_detbury, p_caco3bury
 
     real, dimension(:,:,:), pointer :: &
         p_wdet, &
@@ -1414,6 +1416,10 @@ module generic_WOMBATlite
     !-----------------------------------------------------------------------
     call g_tracer_add_param('burial', wombat%burial, .true. )
 
+    ! Add back the lost NO3 and Alk due to burial to surface? 
+    !-----------------------------------------------------------------------
+    call g_tracer_add_param('conservetracers', wombat%conservetracers, .true. )
+
     ! CaCO3 remineralisation rate constant [1/s]
     !-----------------------------------------------------------------------
     ! Default value matches 0.001714 day-1 in Ziehn et al 2020; differs from
@@ -1430,7 +1436,7 @@ module generic_WOMBATlite
 
     ! CaCO3 dissolution factor due to calcite undersaturation
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('disscal', wombat%disscal, 0.500)
+    call g_tracer_add_param('disscal', wombat%disscal, 0.250)
 
     ! CaCO3 dissolution factor due to aragonite undersaturation 
     !-----------------------------------------------------------------------
@@ -1438,7 +1444,7 @@ module generic_WOMBATlite
 
     ! CaCO3 dissolution factor due to detritus remineralisation creating anoxic microenvironment
     !-----------------------------------------------------------------------
-    call g_tracer_add_param('dissdet', wombat%dissdet, 0.250)
+    call g_tracer_add_param('dissdet', wombat%dissdet, 0.100)
 
     ! Background concentration of iron-binding ligand [umol/m3]
     !-----------------------------------------------------------------------
@@ -1736,6 +1742,20 @@ module generic_WOMBATlite
         units = 'mol m-2', &
         prog = .false.)
 
+    ! pjb: included here so included in restart
+    call g_tracer_add(tracer_list, package_name, &
+        name = 'detbury', &
+        longname = 'Amount of detritus lost to burial', &
+        units = 'mol m-2 s-1', &
+        prog = .false.)
+
+    ! pjb: included here so included in restart
+    call g_tracer_add(tracer_list, package_name, &
+        name = 'caco3bury', &
+        longname = 'Amount of CaCO3 lost to burial', &
+        units = 'mol m-2 s-1', &
+        prog = .false.)
+
   end subroutine user_add_tracers
 
   !#######################################################################
@@ -1855,6 +1875,16 @@ module generic_WOMBATlite
           wombat%fbury(i,j) = 0.013 + 0.53 * orgflux**2.0 / (7.0 + orgflux)**2.0  ! Eq. 3 Dunne et al. 2007
         enddo
       enddo
+    endif
+
+    call g_tracer_get_pointer(tracer_list, 'detbury', 'field', wombat%p_detbury)
+    call g_tracer_get_pointer(tracer_list, 'caco3bury', 'field', wombat%p_caco3bury)
+    if (wombat%conservetracers) then
+      wombat%p_detbury(:,:,1) = wombat%det_btm(:,:) / dt * wombat%fbury(:,:)
+      wombat%p_caco3bury(:,:,1) = wombat%caco3_btm(:,:) / dt * wombat%fbury(:,:)
+    else
+      wombat%p_detbury(:,:,1) = 0.0 
+      wombat%p_caco3bury(:,:,1) = 0.0
     endif
 
     call g_tracer_get_pointer(tracer_list, 'det_sediment', 'field', wombat%p_det_sediment)
@@ -2464,7 +2494,7 @@ module generic_WOMBATlite
     n_pools(:,:,:,:) = 0.0
     c_pools(:,:,:,:) = 0.0
 
-    do tn = 1,ts_npzd
+    do tn = 1,ts_npzd  !{
 
       n_pools(:,:,:,1) = n_pools(:,:,:,2)
       c_pools(:,:,:,1) = c_pools(:,:,:,2)
@@ -3030,7 +3060,7 @@ module generic_WOMBATlite
 
 
       enddo; enddo; enddo
-    enddo
+    enddo !} nested timestep (ts_npzd)
 
     ! Add biotically induced tendency to biotracers
     !-----------------------------------------------------------------------
@@ -3095,7 +3125,9 @@ module generic_WOMBATlite
         wombat%f_alk(i,j,k) = wombat%f_alk(i,j,k) + wombat%alk_correct(i,j,k)
         wombat%f_dic(i,j,k) = wombat%f_dic(i,j,k) + wombat%dic_correct(i,j,k)
         wombat%f_dicp(i,j,k) = max(wombat%dic_min * mmol_m3_to_mol_kg, wombat%f_dic(i,j,k))
-    enddo; enddo; enddo
+      enddo
+    enddo; enddo
+
 
     ! Set tracers values
     call g_tracer_set_values(tracer_list, 'no3', 'field', wombat%f_no3, isd, jsd, ntau=tau)
@@ -3223,6 +3255,19 @@ module generic_WOMBATlite
     call g_tracer_set_values(tracer_list, 'dicr', 'btf', wombat%b_dicr, isd, jsd)
     call g_tracer_set_values(tracer_list, 'fe', 'btf', wombat%b_fe, isd, jsd)
     call g_tracer_set_values(tracer_list, 'alk', 'btf', wombat%b_alk, isd, jsd)
+
+
+    ! Apply back burial loss of nitrogen and alkalinity to surface
+    !-----------------------------------------------------------------------
+    if (wombat%conservetracers) then
+      call g_tracer_get_pointer(tracer_list, 'detbury', 'field', wombat%p_detbury) ! [mol/m2/s]
+      call g_tracer_get_pointer(tracer_list, 'caco3bury', 'field', wombat%p_caco3bury) ! [mol/m2/s]
+      call g_tracer_get_pointer(tracer_list, 'no3', 'stf', wombat%p_no3_stf)
+      call g_tracer_get_pointer(tracer_list, 'alk', 'stf', wombat%p_alk_stf)
+      wombat%p_no3_stf(:,:) = wombat%p_no3_stf(:,:) + wombat%p_detbury(:,:,1)*16.0/122.0   ! [mol/m2/s]
+      wombat%p_alk_stf(:,:) = wombat%p_alk_stf(:,:) - wombat%p_detbury(:,:,1)*16.0/122.0 &
+                                                    + wombat%p_caco3bury(:,:,1) * 2.0      ! [mol/m2/s]
+    endif
 
     !=======================================================================
     ! Send diagnostics
