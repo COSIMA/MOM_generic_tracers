@@ -2034,6 +2034,7 @@ module generic_WOMBATlite
     real                                    :: phy_minqfe, phy_maxqfe
     real                                    :: zoo_slmor, epsmin
     real                                    :: hco3, diss_cal, diss_ara, diss_det
+    real                                    :: avedetbury, avecaco3bury
     real, dimension(:,:,:,:), allocatable   :: n_pools, c_pools
     logical                                 :: used
 
@@ -3264,9 +3265,11 @@ module generic_WOMBATlite
       call g_tracer_get_pointer(tracer_list, 'caco3bury', 'field', wombat%p_caco3bury) ! [mol/m2/s]
       call g_tracer_get_pointer(tracer_list, 'no3', 'stf', wombat%p_no3_stf)
       call g_tracer_get_pointer(tracer_list, 'alk', 'stf', wombat%p_alk_stf)
-      wombat%p_no3_stf(:,:) = wombat%p_no3_stf(:,:) + wombat%p_detbury(:,:,1)*16.0/122.0   ! [mol/m2/s]
-      wombat%p_alk_stf(:,:) = wombat%p_alk_stf(:,:) - wombat%p_detbury(:,:,1)*16.0/122.0 &
-                                                    + wombat%p_caco3bury(:,:,1) * 2.0      ! [mol/m2/s]
+      ! Spread the addition around to all grid cells
+      avedetbury = sum(wombat%p_detbury(:,:,1) * grid_dat(:,:)) / sum(grid_dat(:,:) * grid_tmask(:,:,1))  ! [mol/m2/s]
+      avecaco3bury = sum(wombat%p_caco3bury(:,:,1) * grid_dat(:,:)) / sum(grid_dat(:,:) * grid_tmask(:,:,1))  ! [mol/m2/s]
+      wombat%p_no3_stf(:,:) = wombat%p_no3_stf(:,:) + avedetbury*16.0/122.0   ! [mol/m2/s]
+      wombat%p_alk_stf(:,:) = wombat%p_alk_stf(:,:) - avedetbury*16.0/122.0 + avecaco3bury*2.0  ! [mol/m2/s]
     endif
 
     !=======================================================================
