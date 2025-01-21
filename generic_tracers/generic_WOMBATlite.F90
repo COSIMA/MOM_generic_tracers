@@ -3266,10 +3266,12 @@ module generic_WOMBATlite
       call g_tracer_get_pointer(tracer_list, 'no3', 'stf', wombat%p_no3_stf)
       call g_tracer_get_pointer(tracer_list, 'alk', 'stf', wombat%p_alk_stf)
       ! Spread the addition around to all grid cells
-      avedetbury = sum(wombat%p_detbury(:,:,1) * grid_dat(:,:)) / sum(grid_dat(:,:) * grid_tmask(:,:,1))  ! [mol/m2/s]
-      avecaco3bury = sum(wombat%p_caco3bury(:,:,1) * grid_dat(:,:)) / sum(grid_dat(:,:) * grid_tmask(:,:,1))  ! [mol/m2/s]
-      wombat%p_no3_stf(:,:) = wombat%p_no3_stf(:,:) + avedetbury*16.0/122.0   ! [mol/m2/s]
-      wombat%p_alk_stf(:,:) = wombat%p_alk_stf(:,:) - avedetbury*16.0/122.0 + avecaco3bury*2.0  ! [mol/m2/s]
+      if (sum(grid_tmask(:,:,1)).gt.0.0) then
+        avedetbury = sum(wombat%p_detbury(:,:,1) * grid_dat(:,:)) / sum(grid_dat(:,:) * grid_tmask(:,:,1))  ! [mol/m2/s]
+        avecaco3bury = sum(wombat%p_caco3bury(:,:,1) * grid_dat(:,:)) / sum(grid_dat(:,:) * grid_tmask(:,:,1))  ! [mol/m2/s]
+        wombat%p_no3_stf(:,:) = wombat%p_no3_stf(:,:) + avedetbury*16.0/122.0   ! [mol/m2/s]
+        wombat%p_alk_stf(:,:) = wombat%p_alk_stf(:,:) - avedetbury*16.0/122.0 + avecaco3bury*2.0  ! [mol/m2/s]
+      endif
     endif
 
     !=======================================================================
