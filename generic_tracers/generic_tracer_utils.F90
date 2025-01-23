@@ -3180,36 +3180,33 @@ contains
 
           nz=g_tracer_com%grid_kmt(i,j)
 
+          ! If a non-constant sinking rate were used, that would be incorprated here.
           if (g_tracer%move_vertical) then
-	    do k=2,nz; sink_dist(k) = (dt*g_tracer%vmove(i,j,k)) * m_to_H; enddo
-	  endif
+            do k=2,nz; sink_dist(k) = (dt*g_tracer%vmove(i,j,k)) * m_to_H; enddo
+          endif
           sfc_src = 0.0 ; btm_src = 0.0 
+
+          ! Sinking of tracer into a sediment reservoir?
+          if (_ALLOCATED(g_tracer%btm_reservoir)) then
+             sink(nz+1) = sink_dist(nz) !PJB [13th Nov 2024] to allow sinking into bottom reservoir
+          else
+             sink(nz+1) = 0.0 
+          endif
 
           ! Find the sinking rates at all interfaces, limiting them if necesary
           ! so that the characteristics do not cross within a timestep.
-          !   If a non-constant sinking rate were used, that would be incorprated
-          ! here.
-          if (_ALLOCATED(g_tracer%btm_reservoir)) then
-             do k=2,nz 
-                sink(k) = sink_dist(k) ; h_minus_dsink(k) = h_old(i,j,k)
-             enddo
-             sink(nz+1) = sink_dist(nz+1) 
-          else
-             sink(nz+1) = 0.0 
-             ! Find the limited sinking distance at the interfaces.
-             do k=nz,2,-1
-                if (sink(k+1) >= sink_dist(k)) then
-                   sink(k) = sink_dist(k)
-                   h_minus_dsink(k) = h_old(i,j,k) + (sink(k+1) - sink(k))
-                elseif (sink(k+1) + h_old(i,j,k) < sink_dist(k)) then
-                   sink(k) = sink(k+1) + h_old(i,j,k)
-                   h_minus_dsink(k) = 0.0
-                else
-                   sink(k) = sink_dist(k)
-                   h_minus_dsink(k) = (h_old(i,j,k) + sink(k+1)) - sink(k)
-                endif
-             enddo
-          endif
+          do k=nz,2,-1
+             if (sink(k+1) >= sink_dist(k)) then
+                sink(k) = sink_dist(k)
+                h_minus_dsink(k) = h_old(i,j,k) + (sink(k+1) - sink(k))
+             elseif (sink(k+1) + h_old(i,j,k) < sink_dist(k)) then
+                sink(k) = sink(k+1) + h_old(i,j,k)
+                h_minus_dsink(k) = 0.0
+             else
+                sink(k) = sink_dist(k)
+                h_minus_dsink(k) = (h_old(i,j,k) + sink(k+1)) - sink(k)
+             endif
+          enddo
 
           sink(1) = 0.0 ; h_minus_dsink(1) = (h_old(i,j,1) + sink(2))
 
@@ -3231,6 +3228,11 @@ contains
           do k=2,nz-1 
              c1(k) = eb(i,j,k-1) * b1
              b_denom_1 = h_minus_dsink(k) + d1 * (ea(i,j,k) + sink(k))
+             if (b_denom_1.le.0.0) then
+               print*, "Warning: b_denom_1 <= 0 at (i, j, k):", i, j, k
+               print*, "Values: h_minus_dsink =", h_minus_dsink(k), "d1 =", d1, "ea =", ea(i,j,k), "sink =", sink(k)
+               stop "Error: Diagonal value b_denom_1 must be > 0.0"
+             endif
              b1 = 1.0 / (b_denom_1 + eb(i,j,k))
              d1 = b_denom_1 * b1
 
@@ -3315,10 +3317,11 @@ contains
     
     GOLDtridiag = .true.
     IOWtridiag  = .false.
-    if (g_tracer%move_vertical) then
-       GOLDtridiag = .false.
-       IOWtridiag  = .true.
-    endif
+    ! PJB [1st Dec 2024] Commenting out the next 4 lines ensures GOLDtridiag even when move_vertical==.true.
+    !if (g_tracer%move_vertical) then
+    !   GOLDtridiag = .false.
+    !   IOWtridiag  = .true.
+    !endif
     
     eps = 1.e-30
 
@@ -3415,17 +3418,22 @@ contains
              kp1   = min(k+1,g_tracer_com%nk)
              do i=g_tracer_com%isc,g_tracer_com%iec
                 fact1  = dt/dh(i,j,k)
-		fact2  = rho0*fact1*0.5
-		factu  = fact1/dhw(i,j,km1)
+       fact2  = rho0*fact1*0.5
+       factu  = fact1/dhw(i,j,km1)
                 factl  = fact1/dhw(i,j,k)
-		wabsu       = abs(g_tracer%vmove(i,j,km1))
-		wposu(i,k)  = fact2*(g_tracer%vmove(i,j,km1) + wabsu)*g_tracer_com%grid_tmask(i,j,k)
-		wnegu(i,k)  = fact2*(g_tracer%vmove(i,j,km1) - wabsu)*g_tracer_com%grid_tmask(i,j,k)
-		wabsl       = abs(g_tracer%vmove(i,j,k))
-		wposl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) + wabsl)*g_tracer_com%grid_tmask(i,j,kp1)
-		wnegl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) - wabsl)*g_tracer_com%grid_tmask(i,j,kp1)
-                a1(i,k) = dcb(i,j,km1)*factu*g_tracer_com%grid_tmask(i,j,k)  
-                c1(i,k) = dcb(i,j,k)  *factl*g_tracer_com%grid_tmask(i,j,kp1)
+       wabsu       = abs(g_tracer%vmove(i,j,km1))
+       wposu(i,k)  = fact2*(g_tracer%vmove(i,j,km1) + wabsu)*g_tracer_com%grid_tmask(i,j,k)
+       wnegu(i,k)  = fact2*(g_tracer%vmove(i,j,km1) - wabsu)*g_tracer_com%grid_tmask(i,j,k)
+       wabsl       = abs(g_tracer%vmove(i,j,k))
+       wposl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) + wabsl)*g_tracer_com%grid_tmask(i,j,kp1)
+       wnegl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) - wabsl)*g_tracer_com%grid_tmask(i,j,kp1)
+                if (k.eq.g_tracer_com%grid_kmt(i,j) .and. _ALLOCATED(g_tracer%btm_reservoir)) then  ! PJB [14th Nov 2024]
+                  wnegl(i,k)  = fact2*(g_tracer%vmove(i,j,k  ) - wabsl)*g_tracer_com%grid_tmask(i,j,k)
+                  g_tracer%btm_reservoir(i,j) = g_tracer%btm_reservoir(i,j) - &
+                                                wnegl(i,k)*g_tracer%field(i,j,k,tau)*dh(i,j,k)
+                endif
+                a1(i,k) = dcb(i,j,km1)*factu*g_tracer_com%grid_tmask(i,j,k) 
+                c1(i,k) = dcb(i,j,k)  *factl*g_tracer_com%grid_tmask(i,j,kp1) 
                 a(i,k) = -(a1(i,k) - wnegu(i,k))
                 c(i,k) = -(c1(i,k) + wposl(i,k))
                 f(i,k) = g_tracer%field(i,j,k,tau)*g_tracer_com%grid_tmask(i,j,k) 
@@ -3433,16 +3441,18 @@ contains
              enddo
           enddo
 
+          ! Set boundary conditions (zero flow out the top and bottom of the water column)
           do i=g_tracer_com%isc,g_tracer_com%iec
              a1(i,1)  = 0.0
-	     wnegu(i,1) = 0.0; wposu(i,1) = 0.0
-	     a(i,1)  = 0.0
+        wnegu(i,1) = 0.0; wposu(i,1) = 0.0
+        a(i,1)  = 0.0
              c1(i,g_tracer_com%nk) = 0.0
-	     wposl(i,g_tracer_com%nk) = 0.0; wnegl(i,g_tracer_com%nk) = 0.0 
+        wposl(i,g_tracer_com%nk) = 0.0
+             if (.not. _ALLOCATED(g_tracer%btm_reservoir)) wnegl(i,g_tracer_com%nk) = 0.0  !PJB [14th Nov 2024]
              c(i,g_tracer_com%nk) = 0.0
              b(i,1)  = 1.0 + a1(i,1) + c1(i,1) - wnegl(i,1) + wposu(i,1)
              b(i,g_tracer_com%nk) = 1.0 + a1(i,g_tracer_com%nk) + c1(i,g_tracer_com%nk) &
-	                                - wnegl(i,g_tracer_com%nk) + wposu(i,g_tracer_com%nk)
+                                   - wnegl(i,g_tracer_com%nk) + wposu(i,g_tracer_com%nk)
 
              ! top and bottom b.c.
              if (_ALLOCATED(g_tracer%stf)) &
